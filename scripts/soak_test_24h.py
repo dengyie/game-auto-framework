@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
 """
 24-Hour Soak Test Runner for game-auto-framework (Enterprise VPS Edition).
-Monitors:
-  - Process Memory RSS (Drift & Leak detection)
+Monitors & Stresses:
+  - Process Memory RSS (Drift & Leak detection, zero-leak SLA)
+  - Synthetic 1280x720 CV & OCR computation workload (OpenCV/NumPy/RapidFuzz memory stability)
   - Fine-grained InstancePool dual-lock deadlock detection
   - Multi-instance 5-account DAG task execution & rotation
+  - Multi-dimensional Chaos fault injection & self-healing MTTR
   - Dedicated Proxy quota invariant enforcement (<= 5 per IP)
   - AccountMatrix physiological fatigue rest/work cycles
-  - ClusterSupervisor fault recovery MTTR (Mean Time To Recovery)
+  - Real-time time-series CSV telemetry persistence
 """
 
 from __future__ import annotations
 
 import argparse
+import csv
 import gc
 import json
 import logging
@@ -28,10 +31,16 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import cv2
+import numpy as np
+
 from cluster.account import AccountConfig, AccountMatrix, AccountStatus
 from cluster.instance_pool import InstancePool, InstanceStatus, TeamRole
 from cluster.proxy import ProxyManager, ProxyProtocol
 from cluster.supervisor import ClusterSupervisor, SupervisorConfig
+from core.cv.battle import BattleDetector
+from core.cv.diff import compute_dhash, calc_hamming_distance
+from core.ocr.fuzzy import find_best_match
 
 logging.basicConfig(
     level=logging.INFO,
@@ -101,6 +110,7 @@ class SoakTestRunner:
         num_instances: int = 5,
         device_type: str = "virtual",
         inject_faults: bool = True,
+        enable_cv_stress: bool = True,
         report_path: str = "logs/soak_test_report.json",
     ) -> None:
         self.duration_sec = duration_hours * 3600.0
@@ -108,8 +118,10 @@ class SoakTestRunner:
         self.num_instances = num_instances
         self.device_type = device_type
         self.inject_faults = inject_faults
+        self.enable_cv_stress = enable_cv_stress
         self.report_path = Path(report_path)
         self.report_path.parent.mkdir(parents=True, exist_ok=True)
+        self.csv_path = self.report_path.with_suffix(".csv")
 
         self._stop_event = threading.Event()
         self.samples: List[MetricSample] = []
@@ -123,6 +135,22 @@ class SoakTestRunner:
         self.proxy_manager = ProxyManager.get_instance()
         self.account_matrix = AccountMatrix.get_instance()
         self.supervisor = ClusterSupervisor.get_instance()
+
+        # Telemetry CSV writer initialization
+        self._init_csv()
+
+    def _init_csv(self) -> None:
+        """Initialize the time-series CSV telemetry file."""
+        try:
+            with open(self.csv_path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    "timestamp", "elapsed_sec", "rss_mb",
+                    "active_instances", "completed_tasks",
+                    "faults_recovered", "deadlocks_detected",
+                ])
+        except Exception as e:
+            logger.warning(f"Failed to initialize telemetry CSV: {e}")
 
     def reset_subsystems(self) -> None:
         """Reset and clean in-memory state across singletons."""
@@ -200,7 +228,7 @@ class SoakTestRunner:
         logger.info("Cluster and Supervisor successfully initialized.")
 
     def _execute_simulated_workload(self) -> None:
-        """Simulate concurrent DAG operations across instances."""
+        """Simulate concurrent DAG operations and CV/OCR computations across instances."""
         for inst in self.instance_pool.list_instances():
             inst_id = inst.instance_id
             # Verify lock acquisition to ensure no deadlocks
@@ -220,27 +248,67 @@ class SoakTestRunner:
                 if bound_acc:
                     bound_acc.add_income(gold=50, silver=1000)
                     bound_acc.accumulated_online_seconds += 1.0
+
+                # If CV stress is enabled, perform synthetic image diff & battle detection
+                if self.enable_cv_stress:
+                    self._run_cv_stress_step()
+
             finally:
                 inst._state_lock.release()
 
+    def _run_cv_stress_step(self) -> None:
+        """Run synthetic 1280x720 CV and OCR operations to stress C-extensions & memory."""
+        try:
+            # 1. Synthetic 3-channel frame
+            frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+            cv2.rectangle(frame, (100, 100), (300, 300), (0, 255, 0), -1)
+            cv2.putText(frame, "SOAK TEST BATTLE ACTIVE", (400, 200), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
+
+            # 2. dHash computation
+            _ = compute_dhash(frame)
+
+            # 3. Battle state detection (HSV mask & contours)
+            detector = BattleDetector()
+            _ = detector.is_in_battle(frame)
+
+            # 4. RapidFuzz text matching stress
+            choices = ["师门任务(20/20)", "宝图任务", "抓鬼任务", "运镖任务", "工坊考古", "商会出售"]
+            _ = find_best_match("师门", choices, threshold=60.0)
+
+        except Exception as e:
+            logger.error(f"Error during CV stress step: {e}")
+
     def _run_fault_injection(self, step: int) -> None:
-        """Inject faults periodically to verify self-healing MTTR."""
-        # Every 60 sample intervals, simulate transient device stall on instance 2
+        """Inject multi-dimensional chaos faults periodically to verify self-healing MTTR."""
+        # 1. Disconnection Fault on Instance 2
         if step > 0 and step % 60 == 0:
             target_inst = "soak_inst_02"
             dev_inst = self.instance_pool.get_instance(target_inst)
             if dev_inst:
-                logger.warning(f"[Fault Injection] Simulating disconnection on {target_inst}...")
+                logger.warning(f"[Chaos Fault] Simulating transient disconnection on {target_inst}...")
                 self.faults_injected += 1
                 dev_inst.status = InstanceStatus.DISCONNECTED
                 if dev_inst.device:
                     dev_inst.device.disconnect()
-                # Trigger supervisor check
-                time.sleep(0.5)
+                time.sleep(0.3)
                 report = self.supervisor.check_once()
                 if dev_inst.status != InstanceStatus.DISCONNECTED or target_inst in report.get("reconnected", []):
                     self.faults_recovered += 1
                     logger.info(f"[Self-Healing] {target_inst} successfully recovered by Supervisor!")
+
+        # 2. Heartbeat Stagnation Fault on Instance 4
+        if step > 0 and step % 90 == 0:
+            target_inst = "soak_inst_04"
+            dev_inst = self.instance_pool.get_instance(target_inst)
+            if dev_inst:
+                logger.warning(f"[Chaos Fault] Simulating heartbeat stagnation on {target_inst}...")
+                self.faults_injected += 1
+                dev_inst.last_heartbeat_time = time.time() - 100.0  # Force timeout
+                time.sleep(0.3)
+                report = self.supervisor.check_once()
+                if target_inst in report.get("reconnected", []) or time.time() - dev_inst.last_heartbeat_time < 30.0:
+                    self.faults_recovered += 1
+                    logger.info(f"[Self-Healing] Stagnant {target_inst} recovered by Supervisor!")
 
     def run(self) -> SoakTestResult:
         """Execute the soak test run."""
@@ -288,6 +356,7 @@ class SoakTestRunner:
                     deadlocks_detected=self.deadlocks_detected,
                 )
                 self.samples.append(sample)
+                self._append_csv(sample)
 
                 # Log progress periodically
                 if step % 6 == 0 or elapsed < 5.0:
@@ -353,6 +422,19 @@ class SoakTestRunner:
         self._save_report(result)
         return result
 
+    def _append_csv(self, s: MetricSample) -> None:
+        """Append one time-series row to the telemetry CSV file."""
+        try:
+            with open(self.csv_path, "a", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    s.timestamp, s.elapsed_sec, s.rss_mb,
+                    s.active_instances, s.completed_tasks,
+                    s.faults_recovered, s.deadlocks_detected,
+                ])
+        except Exception:
+            pass
+
     def stop(self) -> None:
         """Stop supervisor and release resources."""
         self._stop_event.set()
@@ -406,8 +488,9 @@ def main() -> None:
     parser.add_argument("--duration-hours", type=float, default=24.0, help="Test duration in hours (e.g. 24.0, or 0.01 for fast smoke)")
     parser.add_argument("--sample-interval-sec", type=float, default=10.0, help="Metrics sampling interval in seconds")
     parser.add_argument("--instances", type=int, default=5, help="Number of instances (default: 5)")
-    parser.add_argument("--device-type", type=str, default="virtual", choices=["virtual", "adb"], help="Device type (virtual or adb)")
+    parser.add_argument("--device-type", choices=["virtual", "adb"], default="virtual", help="Device type (virtual or adb)")
     parser.add_argument("--no-faults", action="store_true", help="Disable periodic fault injection")
+    parser.add_argument("--no-cv-stress", action="store_true", help="Disable synthetic CV and OCR computation stress")
     parser.add_argument("--report", type=str, default="logs/soak_test_report.json", help="Path to write JSON report")
 
     args = parser.parse_args()
@@ -418,19 +501,24 @@ def main() -> None:
         num_instances=args.instances,
         device_type=args.device_type,
         inject_faults=not args.no_faults,
+        enable_cv_stress=not args.no_cv_stress,
         report_path=args.report,
     )
 
-    def handle_sig(sig, frame):
-        logger.warning("Signal received, gracefully stopping soak test...")
+    def handle_sigterm(signum: int, frame: Any) -> None:
+        logger.info("Signal received. Stopping soak test gracefully...")
         runner.stop()
 
-    signal.signal(signal.SIGINT, handle_sig)
-    signal.signal(signal.SIGTERM, handle_sig)
+    signal.signal(signal.SIGINT, handle_sigterm)
+    signal.signal(signal.SIGTERM, handle_sigterm)
 
     result = runner.run()
     if not result.passed_sla:
+        logger.error(f"Soak test failed SLA checks: {result.sla_violations}")
         sys.exit(1)
+    else:
+        logger.info("Soak test passed all SLA criteria successfully!")
+        sys.exit(0)
 
 
 if __name__ == "__main__":
