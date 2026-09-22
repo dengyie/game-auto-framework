@@ -13,7 +13,7 @@ import uvicorn
 from loguru import logger
 
 from core.device.factory import DeviceFactory
-from plugins.mhxy_mobile.plugin import MHXYMobilePlugin
+from plugins.registry import GamePluginRegistry
 from scheduler.dag import PipelineStatus
 
 
@@ -24,10 +24,11 @@ def run_cli_pipeline(plugin_id: str, pipeline_name: str, device_type: str, seria
         logger.error(f"Could not connect to device [{device.name}]")
         sys.exit(1)
 
-    if plugin_id == "mhxy_mobile":
-        plugin = MHXYMobilePlugin(device=device)
-    else:
-        logger.error(f"Unknown plugin [{plugin_id}]")
+    try:
+        plugin = GamePluginRegistry.create(plugin_id, device=device)
+    except Exception as e:
+        logger.error(f"Could not load plugin [{plugin_id}]: {e}")
+        device.disconnect()
         sys.exit(1)
 
     logger.info(f"Executing pipeline [{pipeline_name}] step-by-step...")
@@ -60,6 +61,10 @@ def main() -> None:
     run_parser.add_argument("--device", default="auto", help="Device type: auto, adb, virtual, windows, macos")
     run_parser.add_argument("--serial", default=None, help="ADB host:port or target serial")
 
+    # Subcommand: mcp (Native Model Context Protocol Server for AI Agents)
+    mcp_parser = subparsers.add_parser("mcp", help="Run Model Context Protocol (MCP) server for AI Agents")
+    mcp_parser.add_argument("--transport", default="stdio", choices=["stdio"], help="MCP transport protocol (default: stdio)")
+
     # Subcommand: test (Self-diagnostic unit tests)
     subparsers.add_parser("test", help="Run pytest suite")
 
@@ -68,6 +73,9 @@ def main() -> None:
     if args.subcommand == "server":
         logger.info(f"Starting VPS API Server on {args.host}:{args.port}")
         uvicorn.run("server.app:app", host=args.host, port=args.port, reload=args.reload)
+    elif args.subcommand == "mcp":
+        from server.mcp import run_mcp_server
+        run_mcp_server(transport=args.transport)
     elif args.subcommand == "run":
         run_cli_pipeline(args.plugin, args.pipeline, args.device, args.serial)
     elif args.subcommand == "test":

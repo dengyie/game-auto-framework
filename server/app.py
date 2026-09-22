@@ -4,17 +4,19 @@ Provides REST endpoints to start/stop pipelines, monitor progress, chain routine
 """
 
 from __future__ import annotations
+from pathlib import Path
 import sys
 import threading
 import time
 from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, HTTPException, Response
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from loguru import logger
 
 from core.device.base import BaseDevice
 from core.device.factory import DeviceFactory
-from plugins.mhxy_mobile.plugin import MHXYMobilePlugin
+from plugins.registry import GamePluginRegistry
 from scheduler.dag import PipelineStatus
 from scheduler.routine import RoutineConfig, RoutineStatus, TaskRoutineExecutor
 from cluster.instance_pool import InstancePool, InstanceStatus, TeamRole
@@ -115,6 +117,47 @@ def _background_worker() -> None:
         GLOBAL_TASK.running = False
 
 
+STATIC_DIR = Path(__file__).parent / "static"
+INDEX_HTML = STATIC_DIR / "index.html"
+
+
+@app.get("/", response_class=HTMLResponse)
+@app.get("/dashboard", response_class=HTMLResponse)
+def serve_dashboard() -> HTMLResponse:
+    """Serve the embedded modern dark-mode Web Dashboard."""
+    if INDEX_HTML.exists():
+        with open(INDEX_HTML, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    return HTMLResponse(
+        content="""<!DOCTYPE html>
+<html>
+<head><title>game-auto-framework</title></head>
+<body style="background:#0f172a;color:#f8fafc;font-family:sans-serif;padding:40px;">
+  <h2>🎮 game-auto-framework VPS Control Plane</h2>
+  <p>Loading Dashboard UI... (Static bundle initializing)</p>
+  <p><a href="/docs" style="color:#38bdf8;">API Documentation (Swagger UI)</a></p>
+</body>
+</html>""",
+        status_code=200,
+    )
+
+
+@app.get("/api/v1/plugins")
+def list_plugins() -> Dict[str, Any]:
+    """Enumerate all discovered game plugins and metadata."""
+    plugins = GamePluginRegistry.list_plugins()
+    return {"plugins": plugins, "total": len(plugins)}
+
+
+@app.get("/api/v1/plugins/{plugin_id}/pipelines")
+def get_plugin_pipelines(plugin_id: str) -> Dict[str, Any]:
+    """Get all pipeline DAG definitions for a specific game plugin."""
+    pipelines = GamePluginRegistry.get_pipelines(plugin_id)
+    if not pipelines:
+        raise HTTPException(status_code=404, detail=f"Plugin [{plugin_id}] not found or has no pipelines.")
+    return {"plugin_id": plugin_id, "pipelines": pipelines, "total": len(pipelines)}
+
+
 @app.get("/health")
 @app.get("/api/v1/status")
 def get_status() -> Dict[str, Any]:
@@ -174,10 +217,10 @@ def start_task(req: StartTaskRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"Failed to initialize device: {e}")
 
     # 2. Initialize Plugin
-    if req.plugin == "mhxy_mobile":
-        plugin = MHXYMobilePlugin(device=device)
-    else:
-        raise HTTPException(status_code=400, detail=f"Unsupported plugin: {req.plugin}")
+    try:
+        plugin = GamePluginRegistry.create(req.plugin, device=device)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Unsupported or failed to load plugin: {req.plugin} ({e})")
 
     # Seed variables into plugin context
     for k, v in req.variables.items():
@@ -226,10 +269,10 @@ def start_routine(req: StartRoutineRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"Failed to initialize device: {e}")
 
     # 2. Initialize Plugin
-    if req.plugin == "mhxy_mobile":
-        plugin = MHXYMobilePlugin(device=device)
-    else:
-        raise HTTPException(status_code=400, detail=f"Unsupported plugin: {req.plugin}")
+    try:
+        plugin = GamePluginRegistry.create(req.plugin, device=device)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Unsupported or failed to load plugin: {req.plugin} ({e})")
 
     # Seed variables into plugin context
     for k, v in req.variables.items():
@@ -332,6 +375,7 @@ class RegisterInstanceRequest(BaseModel):
 
 
 class StartInstanceTaskRequest(BaseModel):
+    plugin: str = Field(default="mhxy_mobile", description="Target plugin ID (e.g. 'mhxy_mobile', 'yys_mobile')")
     pipeline: Optional[str] = Field(default=None, description="Single pipeline name (e.g. 'daily_shimen')")
     routine_name: Optional[str] = Field(default=None, description="Routine name if executing routine")
     pipelines: Optional[List[str]] = Field(default=None, description="Ordered list of pipelines for routine")
@@ -366,6 +410,10 @@ class RegisterProxyRequest(BaseModel):
 class BindProxyRequest(BaseModel):
     instance_id: str
     proxy_id: str
+
+
+class UnbindProxyRequest(BaseModel):
+    instance_id: str
 
 
 class RegisterAccountRequest(BaseModel):
@@ -430,11 +478,13 @@ def start_instance_task(instance_id: str, req: StartInstanceTaskRequest) -> Dict
             routine_name=routine_name,
             pipelines=req.pipelines,
             variables=req.variables,
+            plugin_id=req.plugin,
         )
     elif req.pipeline:
         success = inst.start_pipeline(
             pipeline_name=req.pipeline,
             variables=req.variables,
+            plugin_id=req.plugin,
         )
     else:
         raise HTTPException(status_code=400, detail="Must provide either 'pipeline' or 'pipelines'.")
@@ -442,7 +492,7 @@ def start_instance_task(instance_id: str, req: StartInstanceTaskRequest) -> Dict
     if not success:
         raise HTTPException(status_code=409, detail=f"Failed to start task on [{instance_id}] (instance busy or connect failed).")
 
-    return {"status": "started", "instance_id": instance_id}
+    return {"status": "started", "instance_id": instance_id, "plugin": req.plugin}
 
 
 @app.post("/api/v1/cluster/instances/{instance_id}/stop")
@@ -453,6 +503,15 @@ def stop_instance_task(instance_id: str) -> Dict[str, Any]:
         raise HTTPException(status_code=404, detail=f"Instance [{instance_id}] not found.")
     inst.stop()
     return {"status": "stopped", "instance_id": instance_id}
+
+
+@app.delete("/api/v1/cluster/instances/{instance_id}")
+def unregister_instance(instance_id: str) -> Dict[str, Any]:
+    """Unregister and disconnect a device instance."""
+    success = CLUSTER_POOL.unregister_instance(instance_id)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Instance [{instance_id}] not found.")
+    return {"status": "unregistered", "instance_id": instance_id}
 
 
 @app.get("/api/v1/cluster/instances/{instance_id}/screenshot")
@@ -483,6 +542,13 @@ def create_cluster_team(req: CreateTeamRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.get("/api/v1/cluster/teams")
+def list_cluster_teams() -> Dict[str, Any]:
+    """List all assembled team topologies."""
+    teams = [t.to_dict() for t in CLUSTER_POOL.list_teams()]
+    return {"teams": teams, "total": len(teams)}
+
+
 @app.get("/api/v1/cluster/team/{team_id}")
 def get_cluster_team(team_id: str) -> Dict[str, Any]:
     """Get topology details of a team."""
@@ -490,6 +556,16 @@ def get_cluster_team(team_id: str) -> Dict[str, Any]:
     if not team:
         raise HTTPException(status_code=404, detail=f"Team [{team_id}] not found.")
     return team.to_dict()
+
+
+@app.delete("/api/v1/cluster/team/{team_id}")
+@app.delete("/api/v1/cluster/teams/{team_id}")
+def dissolve_cluster_team(team_id: str) -> Dict[str, Any]:
+    """Dissolve a team topology and reset member roles to solo."""
+    success = CLUSTER_POOL.dissolve_team(team_id)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Team [{team_id}] not found.")
+    return {"status": "dissolved", "team_id": team_id}
 
 
 @app.post("/api/v1/cluster/team/start")
@@ -552,6 +628,27 @@ def bind_proxy(req: BindProxyRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.post("/api/v1/cluster/proxies/unbind")
+def unbind_proxy(req: UnbindProxyRequest) -> Dict[str, Any]:
+    """Unbind an instance from its proxy, releasing quota."""
+    success = PROXY_MANAGER.unbind_instance(req.instance_id)
+    inst = CLUSTER_POOL.get_instance(req.instance_id)
+    if inst:
+        inst.assigned_proxy_id = None
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Instance [{req.instance_id}] was not bound to any proxy.")
+    return {"status": "unbound", "instance_id": req.instance_id}
+
+
+@app.delete("/api/v1/cluster/proxies/{proxy_id}")
+def unregister_proxy(proxy_id: str) -> Dict[str, Any]:
+    """Unregister and remove a dedicated proxy from the pool."""
+    success = PROXY_MANAGER.unregister_proxy(proxy_id)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Proxy [{proxy_id}] not found.")
+    return {"status": "unregistered", "proxy_id": proxy_id}
+
+
 @app.post("/api/v1/cluster/accounts/register")
 def register_account(req: RegisterAccountRequest) -> Dict[str, Any]:
     """Register an account into the account matrix."""
@@ -576,6 +673,16 @@ def list_accounts() -> Dict[str, Any]:
         "assets": ACCOUNT_MATRIX.get_total_assets(),
         "accounts": ACCOUNT_MATRIX.export_to_dict(),
     }
+
+
+@app.post("/api/v1/cluster/accounts/{account_id}/rest")
+def rest_account(account_id: str) -> Dict[str, Any]:
+    """Manually force an account into resting state for anti-bot fatigue management."""
+    acc = ACCOUNT_MATRIX.get_account(account_id)
+    if not acc:
+        raise HTTPException(status_code=404, detail=f"Account [{account_id}] not found.")
+    acc.trigger_rest()
+    return {"status": "resting", "account": acc.to_dict()}
 
 
 @app.get("/api/v1/cluster/supervisor/status")

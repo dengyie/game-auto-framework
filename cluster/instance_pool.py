@@ -16,7 +16,7 @@ from loguru import logger
 from core.device.base import BaseDevice
 from core.device.factory import DeviceFactory
 from plugins.base import BaseGamePlugin
-from plugins.mhxy_mobile.plugin import MHXYMobilePlugin
+from plugins.registry import GamePluginRegistry
 from scheduler.dag import PipelineStatus
 from scheduler.routine import RoutineConfig, RoutineStatus, TaskRoutineExecutor
 
@@ -121,7 +121,8 @@ class DeviceInstance:
         self,
         pipeline_name: str,
         variables: Optional[Dict[str, Any]] = None,
-        plugin_cls: Type[BaseGamePlugin] = MHXYMobilePlugin,
+        plugin_cls: Optional[Type[BaseGamePlugin]] = None,
+        plugin_id: str = "mhxy_mobile",
         run_in_background: bool = True,
     ) -> bool:
         """Start a single automation pipeline on this instance."""
@@ -135,7 +136,10 @@ class DeviceInstance:
                     return False
 
             # Initialize plugin
-            self.plugin = plugin_cls(device=self.device)
+            if plugin_cls is not None:
+                self.plugin = plugin_cls(device=self.device)
+            else:
+                self.plugin = GamePluginRegistry.create(plugin_id, device=self.device)
             if variables:
                 for k, v in variables.items():
                     self.plugin.context.variables[k] = v
@@ -164,7 +168,8 @@ class DeviceInstance:
         routine_name: str,
         pipelines: List[str],
         variables: Optional[Dict[str, Any]] = None,
-        plugin_cls: Type[BaseGamePlugin] = MHXYMobilePlugin,
+        plugin_cls: Optional[Type[BaseGamePlugin]] = None,
+        plugin_id: str = "mhxy_mobile",
         stop_on_failure: bool = True,
         max_anti_bot_fails: int = 2,
         retry_pipeline_times: int = 1,
@@ -180,7 +185,10 @@ class DeviceInstance:
                 if not self.connect():
                     return False
 
-            self.plugin = plugin_cls(device=self.device)
+            if plugin_cls is not None:
+                self.plugin = plugin_cls(device=self.device)
+            else:
+                self.plugin = GamePluginRegistry.create(plugin_id, device=self.device)
             if variables:
                 for k, v in variables.items():
                     self.plugin.context.variables[k] = v

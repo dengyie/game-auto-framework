@@ -1,0 +1,91 @@
+{
+  "name": "yuhun_farm",
+  "entry": "check_lobby",
+  "nodes": [
+    {
+      "name": "check_lobby",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "is_yuhun_lobby_ready"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "click_challenge"
+      },
+      "branches": [
+        {
+          "condition": "variables.get('yuhun_count', 0) >= variables.get('max_yuhun_count', 10)",
+          "next": "yuhun_finish"
+        }
+      ],
+      "next": ["wait_battle"],
+      "timeout_sec": 30.0
+    },
+    {
+      "name": "wait_battle",
+      "recognition": {
+        "type": "always"
+      },
+      "action": {
+        "type": "wait",
+        "duration": 0.5
+      },
+      "next": ["check_settlement"],
+      "timeout_sec": 60.0
+    },
+    {
+      "name": "check_settlement",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "is_yuhun_battle_settlement"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "click_settlement_dismiss"
+      },
+      "next": ["increment_run"],
+      "timeout_sec": 30.0
+    },
+    {
+      "name": "increment_run",
+      "recognition": {
+        "type": "always"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "increment_yuhun_round"
+      },
+      "branches": [
+        {
+          "condition": "variables.get('yuhun_count', 0) >= variables.get('max_yuhun_count', 10)",
+          "next": "yuhun_finish"
+        }
+      ],
+      "next": ["check_lobby"],
+      "timeout_sec": 10.0
+    },
+    {
+      "name": "yuhun_finish",
+      "recognition": {
+        "type": "always"
+      },
+      "action": {
+        "type": "none"
+      },
+      "is_terminal": true
+    },
+    {
+      "name": "check_bounty_popup",
+      "is_interrupt": true,
+      "recognition": {
+        "type": "custom",
+        "custom_func": "detect_bounty_invite"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "resolve_bounty_invite"
+      },
+      "timeout_sec": 15.0
+    }
+  ]
+}

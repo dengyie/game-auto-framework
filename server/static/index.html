@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Game Auto Framework - VPS 控制台</title>
+  <style>
+    :root {
+      --bg-primary: #090d16;
+      --bg-secondary: #0f172a;
+      --bg-card: #1e293b;
+      --bg-card-hover: #273549;
+      --border-color: #334155;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --cyan: #38bdf8;
+      --emerald: #10b981;
+      --amber: #f59e0b;
+      --rose: #f43f5e;
+      --indigo: #818cf8;
+      --radius: 8px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    body { background-color: var(--bg-primary); color: var(--text-main); min-height: 100vh; display: flex; flex-direction: column; }
+    
+    /* Header */
+    header { background: var(--bg-secondary); border-bottom: 1px solid var(--border-color); padding: 12px 24px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand-title { font-size: 1.15rem; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px; }
+    .badge { font-size: 0.72rem; padding: 2px 8px; border-radius: 999px; font-weight: 600; text-transform: uppercase; }
+    .badge-cyan { background: rgba(56, 189, 248, 0.15); color: var(--cyan); border: 1px solid rgba(56, 189, 248, 0.3); }
+    .badge-green { background: rgba(16, 185, 129, 0.15); color: var(--emerald); border: 1px solid rgba(16, 185, 129, 0.3); }
+    .badge-amber { background: rgba(245, 158, 11, 0.15); color: var(--amber); border: 1px solid rgba(245, 158, 11, 0.3); }
+    .badge-red { background: rgba(244, 63, 94, 0.15); color: var(--rose); border: 1px solid rgba(244, 63, 94, 0.3); }
+    .badge-slate { background: rgba(148, 163, 184, 0.15); color: var(--text-muted); border: 1px solid var(--border-color); }
+    
+    .header-controls { display: flex; align-items: center; gap: 14px; }
+    .pulse-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--emerald); display: inline-block; animation: pulse 2s infinite; }
+    @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); } 70% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); } 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); } }
+    
+    button { background: var(--bg-card); color: var(--text-main); border: 1px solid var(--border-color); padding: 6px 14px; border-radius: var(--radius); cursor: pointer; font-size: 0.85rem; font-weight: 500; transition: all 0.2s; display: inline-flex; align-items: center; gap: 6px; }
+    button:hover { background: var(--bg-card-hover); border-color: var(--cyan); }
+    button.primary { background: #0284c7; border-color: #38bdf8; color: #fff; }
+    button.primary:hover { background: #0369a1; }
+    button.danger { background: rgba(244, 63, 94, 0.15); border-color: rgba(244, 63, 94, 0.4); color: var(--rose); }
+    button.danger:hover { background: rgba(244, 63, 94, 0.3); }
+    
+    /* Layout */
+    main { padding: 24px; max-width: 1400px; margin: 0 auto; width: 100%; flex: 1; display: flex; flex-direction: column; gap: 20px; }
+    
+    /* Top KPI Cards */
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+    .kpi-card { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 18px; position: relative; overflow: hidden; }
+    .kpi-card::after { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--cyan), var(--indigo)); }
+    .kpi-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .kpi-title { font-size: 0.85rem; color: var(--text-muted); font-weight: 500; }
+    .kpi-value { font-size: 1.8rem; font-weight: 700; color: #fff; display: flex; align-items: baseline; gap: 8px; }
+    .kpi-sub { font-size: 0.8rem; color: var(--text-muted); margin-top: 6px; display: flex; gap: 12px; }
+    
+    /* Tabs Navigation */
+    .tab-nav { display: flex; gap: 8px; border-bottom: 1px solid var(--border-color); padding-bottom: 8px; overflow-x: auto; }
+    .tab-btn { background: transparent; border: none; padding: 8px 16px; border-radius: var(--radius); color: var(--text-muted); font-size: 0.9rem; font-weight: 600; cursor: pointer; }
+    .tab-btn:hover { background: rgba(255, 255, 255, 0.05); color: #fff; }
+    .tab-btn.active { background: rgba(56, 189, 248, 0.15); color: var(--cyan); border: 1px solid rgba(56, 189, 248, 0.3); }
+    
+    /* Tab Content Areas */
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; animation: fadeIn 0.2s ease-in-out; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+    
+    /* Cluster Instances Grid */
+    .instances-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 16px; }
+    .instance-card { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+    .inst-head { display: flex; justify-content: space-between; align-items: center; }
+    .inst-id { font-size: 1.05rem; font-weight: 700; color: #fff; }
+    .inst-details { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.82rem; background: var(--bg-card); padding: 10px; border-radius: 6px; }
+    .inst-detail-item { display: flex; flex-direction: column; gap: 2px; }
+    .inst-label { color: var(--text-muted); font-size: 0.75rem; }
+    .inst-val { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .inst-actions { display: flex; gap: 8px; margin-top: auto; }
+    
+    /* Tables */
+    .table-container { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius); overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.88rem; }
+    th { background: rgba(255, 255, 255, 0.02); color: var(--text-muted); padding: 12px 16px; border-bottom: 1px solid var(--border-color); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; }
+    td { padding: 12px 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); color: #cbd5e1; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255, 255, 255, 0.02); }
+    
+    /* Progress Bars */
+    .bar-container { background: #334155; border-radius: 999px; height: 6px; width: 100%; overflow: hidden; margin-top: 4px; }
+    .bar-fill { height: 100%; border-radius: 999px; background: var(--emerald); }
+    
+    /* Form Styles */
+    .form-panel { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 20px; max-width: 800px; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .form-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+    .form-group.full-width { grid-column: span 2; }
+    label { font-size: 0.82rem; font-weight: 600; color: var(--text-muted); }
+    input, select, textarea { background: var(--bg-card); border: 1px solid var(--border-color); color: #fff; padding: 8px 12px; border-radius: 6px; font-size: 0.88rem; }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: var(--cyan); }
+    
+    /* Modal / Drawer */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(4px); display: none; justify-content: center; align-items: center; z-index: 1000; }
+    .modal-overlay.active { display: flex; }
+    .modal-box { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; width: 90%; max-width: 900px; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6); }
+    .modal-head { padding: 16px 20px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; }
+    .modal-body { padding: 20px; overflow-y: auto; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+    .screenshot-viewer { max-width: 100%; border: 1px solid var(--border-color); border-radius: 6px; background: #000; }
+    
+    /* Toast */
+    #toast { position: fixed; bottom: 24px; right: 24px; background: var(--bg-card); border: 1px solid var(--border-color); padding: 12px 20px; border-radius: var(--radius); font-size: 0.88rem; display: none; z-index: 2000; box-shadow: 0 10px 20px rgba(0, 0, 0, 0.5); }
+    #toast.success { border-color: var(--emerald); color: var(--emerald); display: block; }
+    #toast.error { border-color: var(--rose); color: var(--rose); display: block; }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="brand">
+      <div class="brand-title">
+        <span>🎮 Game Auto Framework</span>
+        <span class="badge badge-cyan">Studio Control Plane</span>
+        <span class="badge badge-slate" id="vps-platform">Platform: Loading...</span>
+      </div>
+    </div>
+    <div class="header-controls">
+      <div style="display:flex; align-items:center; gap:6px; font-size:0.85rem; color:var(--text-muted);">
+        <span class="pulse-dot"></span>
+        <span id="sys-clock">--:--:--</span>
+      </div>
+      <select id="auto-refresh-select" style="font-size:0.8rem; padding:4px 8px;">
+        <option value="3000">自动刷新: 3s</option>
+        <option value="5000">自动刷新: 5s</option>
+        <option value="0">停止自动刷新</option>
+      </select>
+      <button onclick="refreshAll()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg> 刷新</button>
+      <a href="/docs" target="_blank" style="text-decoration:none;"><button>API 文档</button></a>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main>
+    <!-- KPI Header Cards -->
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-title">集群实例状态</span>
+          <span class="badge badge-cyan" id="kpi-inst-total">0 节点</span>
+        </div>
+        <div class="kpi-value" id="kpi-inst-active">0 <span style="font-size:0.9rem; font-weight:normal; color:var(--text-muted);">活跃中</span></div>
+        <div class="kpi-sub">
+          <span>空闲: <strong id="kpi-inst-idle" style="color:var(--text-main);">0</strong></span>
+          <span>异常: <strong id="kpi-inst-err" style="color:var(--rose);">0</strong></span>
+          <span>总计轮次: <strong id="kpi-inst-cycles" style="color:var(--cyan);">0</strong></span>
+        </div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-title">独享代理池合规</span>
+          <span class="badge badge-green" id="kpi-proxy-quota">防风控安全</span>
+        </div>
+        <div class="kpi-value" id="kpi-proxy-active">0 <span style="font-size:0.9rem; font-weight:normal; color:var(--text-muted);">活跃代理</span></div>
+        <div class="kpi-sub">
+          <span>总负载: <strong id="kpi-proxy-util" style="color:var(--text-main);">0 / 0</strong></span>
+          <span>单 IP 限制: <strong style="color:var(--emerald);">≤ 5 台</strong></span>
+        </div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-title">账号矩阵收益</span>
+          <span class="badge badge-amber" id="kpi-acc-total">0 账号</span>
+        </div>
+        <div class="kpi-value" id="kpi-gold-total">0 <span style="font-size:0.9rem; font-weight:normal; color:var(--amber);">金币</span></div>
+        <div class="kpi-sub">
+          <span>银币: <strong id="kpi-silver-total" style="color:#cbd5e1;">0</strong></span>
+          <span>在线: <strong id="kpi-acc-online" style="color:var(--emerald);">0</strong></span>
+          <span>疲劳休息: <strong id="kpi-acc-resting" style="color:var(--rose);">0</strong></span>
+        </div>
+      </div>
+
+      <div class="kpi-card">
+        <div class="kpi-header">
+          <span class="kpi-title">7x24h 看门狗监管</span>
+          <span class="badge badge-green" id="kpi-sup-status">ACTIVE</span>
+        </div>
+        <div class="kpi-value" id="kpi-sup-passes">0 <span style="font-size:0.9rem; font-weight:normal; color:var(--text-muted);">次巡检</span></div>
+        <div class="kpi-sub">
+          <span>异常自愈: <strong id="kpi-sup-recovered" style="color:var(--cyan);">0</strong></span>
+          <span>心跳: <strong id="kpi-sup-hb" style="color:var(--text-muted);">--</strong></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <div class="tab-nav">
+      <button class="tab-btn active" onclick="switchTab('instances')">🖥️ 实例集群 (<span id="tab-cnt-inst">0</span>)</button>
+      <button class="tab-btn" onclick="switchTab('teams')">👥 组队拓扑 (<span id="tab-cnt-teams">0</span>)</button>
+      <button class="tab-btn" onclick="switchTab('proxies')">🌐 独享代理池 (<span id="tab-cnt-proxies">0</span>)</button>
+      <button class="tab-btn" onclick="switchTab('accounts')">💰 账号与疲劳作息 (<span id="tab-cnt-accounts">0</span>)</button>
+      <button class="tab-btn" onclick="switchTab('launcher')">🚀 任务启动器</button>
+    </div>
+
+    <!-- Pane 1: Instances -->
+    <div id="pane-instances" class="tab-pane active">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+        <h3 style="font-size:1.05rem;">集群实例列表</h3>
+        <button class="primary" onclick="openRegisterInstanceModal()">+ 注册新实例</button>
+      </div>
+      <div class="instances-grid" id="instances-list">
+        <!-- Rendered dynamically -->
+      </div>
+    </div>
+
+    <!-- Pane 2: Teams -->
+    <div id="pane-teams" class="tab-pane">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+        <h3 style="font-size:1.05rem;">5人协作组队拓扑</h3>
+        <button class="primary" onclick="openCreateTeamModal()">+ 组建新队伍</button>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>队伍 ID</th>
+              <th>队长实例 (Leader)</th>
+              <th>队员列表 (Members)</th>
+              <th>目标玩法</th>
+              <th>编制状态</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="teams-table-body">
+            <!-- Rendered dynamically -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Pane 3: Proxies -->
+    <div id="pane-proxies" class="tab-pane">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+        <h3 style="font-size:1.05rem;">独享代理 IP 列表 (严格限制单 IP ≤ 5 实例)</h3>
+        <button class="primary" onclick="openRegisterProxyModal()">+ 注册代理</button>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>代理 ID</th>
+              <th>主机与端口</th>
+              <th>协议</th>
+              <th>负载状态 (<= 5)</th>
+              <th>已绑定实例</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="proxies-table-body">
+            <!-- Rendered dynamically -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Pane 4: Accounts -->
+    <div id="pane-accounts" class="tab-pane">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+        <h3 style="font-size:1.05rem;">账号矩阵资产与生理疲劳作息</h3>
+        <button class="primary" onclick="openRegisterAccountModal()">+ 注册账号</button>
+      </div>
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>账号 ID</th>
+              <th>角色 / 门派</th>
+              <th>服务器</th>
+              <th>在线累计 / 疲劳上限</th>
+              <th>状态</th>
+              <th>累计金币</th>
+              <th>累计银币</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="accounts-table-body">
+            <!-- Rendered dynamically -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Pane 5: Launcher -->
+    <div id="pane-launcher" class="tab-pane">
+      <div class="form-panel">
+        <h3 style="margin-bottom:16px;">跨游戏自动化任务 / 任务链下发</h3>
+        <form id="launcher-form" onsubmit="handleStartTask(event)">
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="launch-plugin">游戏插件 (Plugin)</label>
+              <select id="launch-plugin" onchange="handlePluginChange()">
+                <option value="mhxy_mobile">梦幻西游手游 (mhxy_mobile)</option>
+                <option value="yys_mobile">阴阳师手游 (yys_mobile)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="launch-target-type">调度模式</label>
+              <select id="launch-target-type" onchange="handleTargetTypeChange()">
+                <option value="global_single">单流水线 (Single Pipeline)</option>
+                <option value="global_routine">顺序任务链 (Routine Chain)</option>
+                <option value="instance_single">集群单实例流水线</option>
+              </select>
+            </div>
+
+            <div class="form-group" id="inst-select-group" style="display:none;">
+              <label for="launch-instance-id">目标集群实例</label>
+              <select id="launch-instance-id"></select>
+            </div>
+
+            <div class="form-group" id="pipeline-select-group">
+              <label for="launch-pipeline">执行流水线 (Pipeline)</label>
+              <select id="launch-pipeline"></select>
+            </div>
+
+            <div class="form-group full-width" id="routine-pipelines-group" style="display:none;">
+              <label for="launch-routine-pipelines">任务链流水线列表 (逗号分隔)</label>
+              <input type="text" id="launch-routine-pipelines" value="daily_shimen, baotu, yuntong">
+            </div>
+
+            <div class="form-group full-width">
+              <label for="launch-vars">初始变量 (JSON 键值对，可选)</label>
+              <textarea id="launch-vars" rows="3" placeholder='{"has_shimen_quest": true}'></textarea>
+            </div>
+          </div>
+          <button type="submit" class="primary" style="margin-top:10px;">▶ 立即下发执行</button>
+        </form>
+      </div>
+    </div>
+  </main>
+
+  <!-- Screenshot Modal -->
+  <div class="modal-overlay" id="screenshot-modal">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h3 id="modal-inst-title">设备实时画面</h3>
+        <div style="display:flex; gap:8px;">
+          <button onclick="refreshScreenshot()">🔄 刷新画面</button>
+          <button class="danger" onclick="closeScreenshotModal()">关闭</button>
+        </div>
+      </div>
+      <div class="modal-body">
+        <img id="modal-screenshot-img" class="screenshot-viewer" alt="设备画面" src="">
+        <div style="font-size:0.8rem; color:var(--text-muted);" id="modal-screen-coords">
+          分辨率: 1280x720 | 渲染模式: Zero-Copy Raw Screencap
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notice -->
+  <div id="toast"></div>
+
+  <script>
+    // State
+    let activeTab = 'instances';
+    let refreshInterval = null;
+    let currentScreenshotInst = null;
+    let cachedPlugins = [];
+
+    // Initialize
+    window.addEventListener('DOMContentLoaded', () => {
+      updateClock();
+      setInterval(updateClock, 1000);
+      setupAutoRefresh();
+      refreshAll();
+      loadPlugins();
+    });
+
+    function updateClock() {
+      const now = new Date();
+      document.getElementById('sys-clock').innerText = now.toLocaleTimeString();
+    }
+
+    function setupAutoRefresh() {
+      const select = document.getElementById('auto-refresh-select');
+      select.addEventListener('change', () => {
+        if (refreshInterval) clearInterval(refreshInterval);
+        const ms = parseInt(select.value);
+        if (ms > 0) {
+          refreshInterval = setInterval(refreshAll, ms);
+        }
+      });
+      refreshInterval = setInterval(refreshAll, 3000);
+    }
+
+    function showToast(msg, isError = false) {
+      const t = document.getElementById('toast');
+      t.innerText = msg;
+      t.className = isError ? 'error' : 'success';
+      setTimeout(() => { t.className = ''; }, 3500);
+    }
+
+    function switchTab(tab) {
+      activeTab = tab;
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+      const activeBtn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.innerText.includes(tab) || (tab === 'instances' && b.innerText.includes('实例')) || (tab === 'teams' && b.innerText.includes('组队')) || (tab === 'proxies' && b.innerText.includes('代理')) || (tab === 'accounts' && b.innerText.includes('账号')) || (tab === 'launcher' && b.innerText.includes('启动器')));
+      if (activeBtn) activeBtn.classList.add('active');
+      const pane = document.getElementById(`pane-${tab}`);
+      if (pane) pane.classList.add('active');
+    }
+
+    async function refreshAll() {
+      try {
+        const [statusRes, clusterRes, instsRes, teamsRes, proxiesRes, accsRes] = await Promise.all([
+          fetch('/api/v1/status').then(r => r.json()).catch(() => ({})),
+          fetch('/api/v1/cluster/status').then(r => r.json()).catch(() => ({})),
+          fetch('/api/v1/cluster/instances').then(r => r.json()).catch(() => []),
+          fetch('/api/v1/cluster/teams').then(r => r.json()).catch(() => ({ teams: [] })),
+          fetch('/api/v1/cluster/proxies').then(r => r.json()).catch(() => ({ proxies: [] })),
+          fetch('/api/v1/cluster/accounts').then(r => r.json()).catch(() => ({ accounts: [] }))
+        ]);
+
+        if (statusRes.platform) {
+          document.getElementById('vps-platform').innerText = `OS: ${statusRes.platform}`;
+        }
+
+        renderKPIs(clusterRes, instsRes, proxiesRes, accsRes);
+        renderInstances(instsRes);
+        renderTeams(teamsRes.teams || []);
+        renderProxies(proxiesRes.proxies || []);
+        renderAccounts(accsRes.accounts || []);
+      } catch (e) {
+        console.error("Refresh error:", e);
+      }
+    }
+
+    function renderKPIs(cluster, insts, proxies, accs) {
+      // Instances KPI
+      const totalInsts = insts.length;
+      const activeInsts = insts.filter(i => i.status === 'busy').length;
+      const idleInsts = insts.filter(i => i.status === 'idle').length;
+      const errInsts = insts.filter(i => i.status === 'error').length;
+      const totalCycles = insts.reduce((acc, i) => acc + (i.completed_cycles || 0), 0);
+
+      document.getElementById('kpi-inst-total').innerText = `${totalInsts} 节点`;
+      document.getElementById('kpi-inst-active').innerHTML = `${activeInsts} <span style="font-size:0.9rem; font-weight:normal; color:var(--text-muted);">活跃中</span>`;
+      document.getElementById('kpi-inst-idle').innerText = idleInsts;
+      document.getElementById('kpi-inst-err').innerText = errInsts;
+      document.getElementById('kpi-inst-cycles').innerText = totalCycles;
+      document.getElementById('tab-cnt-inst').innerText = totalInsts;
+
+      // Proxies KPI
+      const proxyList = proxies.proxies || [];
+      const totalAssigned = proxyList.reduce((acc, p) => acc + (p.active_instance_ids ? p.active_instance_ids.length : 0), 0);
+      const totalCapacity = proxyList.length * 5;
+      document.getElementById('kpi-proxy-active').innerHTML = `${proxyList.length} <span style="font-size:0.9rem; font-weight:normal; color:var(--text-muted);">活跃代理</span>`;
+      document.getElementById('kpi-proxy-util').innerText = `${totalAssigned} / ${totalCapacity}`;
+      document.getElementById('tab-cnt-proxies').innerText = proxyList.length;
+
+      // Accounts KPI
+      const accList = accs.accounts || [];
+      const assets = accs.assets || { total_gold: 0, total_silver: 0 };
+      const onlineAccs = accList.filter(a => a.status === 'in_use').length;
+      const restAccs = accList.filter(a => a.status === 'resting').length;
+      document.getElementById('kpi-acc-total').innerText = `${accList.length} 账号`;
+      document.getElementById('kpi-gold-total').innerHTML = `${assets.total_gold.toLocaleString()} <span style="font-size:0.9rem; font-weight:normal; color:var(--amber);">金币</span>`;
+      document.getElementById('kpi-silver-total').innerText = assets.total_silver.toLocaleString();
+      document.getElementById('kpi-acc-online').innerText = onlineAccs;
+      document.getElementById('kpi-acc-resting').innerText = restAccs;
+      document.getElementById('tab-cnt-accounts').innerText = accList.length;
+
+      // Supervisor KPI
+      const sup = cluster.supervisor || {};
+      document.getElementById('kpi-sup-status').innerText = sup.running ? 'RUNNING' : 'ACTIVE';
+      document.getElementById('kpi-sup-passes').innerHTML = `${sup.total_checks_run || 0} <span style="font-size:0.9rem; font-weight:normal; color:var(--text-muted);">次巡检</span>`;
+      document.getElementById('kpi-sup-recovered').innerText = sup.total_anomalies_recovered || 0;
+      document.getElementById('kpi-sup-hb').innerText = sup.last_check_ago_sec != null ? `${sup.last_check_ago_sec}s 前` : '--';
+    }
+
+    function renderInstances(insts) {
+      const container = document.getElementById('instances-list');
+      const selectInst = document.getElementById('launch-instance-id');
+      
+      // Update launcher select options
+      if (selectInst) {
+        const curVal = selectInst.value;
+        selectInst.innerHTML = insts.map(i => `<option value="${i.instance_id}">${i.instance_id} (${i.status})</option>`).join('');
+        if (curVal) selectInst.value = curVal;
+      }
+
+      if (!insts || insts.length === 0) {
+        container.innerHTML = '<div style="grid-column:1/-1; padding:30px; text-align:center; color:var(--text-muted); background:var(--bg-secondary); border-radius:var(--radius);">暂无已注册实例。可点击右上角 "+ 注册新实例" 或通过 CLI 注册。</div>';
+        return;
+      }
+
+      container.innerHTML = insts.map(i => {
+        let statusBadge = `<span class="badge badge-slate">${i.status}</span>`;
+        if (i.status === 'busy') statusBadge = `<span class="badge badge-green">BUSY (运行中)</span>`;
+        else if (i.status === 'idle') statusBadge = `<span class="badge badge-cyan">IDLE (空闲)</span>`;
+        else if (i.status === 'error') statusBadge = `<span class="badge badge-red">ERROR (故障)</span>`;
+
+        return `
+          <div class="instance-card">
+            <div class="inst-head">
+              <div class="inst-id">${i.instance_id}</div>
+              ${statusBadge}
+            </div>
+            <div class="inst-details">
+              <div class="inst-detail-item">
+                <span class="inst-label">设备类型 / 串号</span>
+                <span class="inst-val">${i.device_type} (${i.serial || '默认'})</span>
+              </div>
+              <div class="inst-detail-item">
+                <span class="inst-label">绑定账号</span>
+                <span class="inst-val" style="color:var(--amber);">${i.assigned_account_id || '未分配'}</span>
+              </div>
+              <div class="inst-detail-item">
+                <span class="inst-label">分配代理 IP</span>
+                <span class="inst-val" style="color:var(--emerald);">${i.assigned_proxy_id || '直连 / 未绑定'}</span>
+              </div>
+              <div class="inst-detail-item">
+                <span class="inst-label">所属组队</span>
+                <span class="inst-val">${i.team_id ? `${i.team_id} (${i.team_role})` : '单人模式'}</span>
+              </div>
+              <div class="inst-detail-item" style="grid-column: span 2;">
+                <span class="inst-label">活跃流水线 / 节点</span>
+                <span class="inst-val" style="color:var(--cyan);">${i.active_pipeline || '无'} (${i.pipeline_status || 'IDLE'})</span>
+              </div>
+            </div>
+            <div class="inst-actions">
+              <button onclick="openScreenshot('${i.instance_id}')">📷 实时截图</button>
+              ${i.status === 'busy' ? 
+                `<button class="danger" onclick="stopInstance('${i.instance_id}')">⏹ 停止</button>` : 
+                `<button class="primary" onclick="quickLaunchInstance('${i.instance_id}')">▶ 启动任务</button>`
+              }
+              <button class="danger" onclick="unregisterInstance('${i.instance_id}')">注销</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderTeams(teams) {
+      const tbody = document.getElementById('teams-table-body');
+      document.getElementById('tab-cnt-teams').innerText = teams.length;
+      if (!teams || teams.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:24px;">暂无组队拓扑。可通过上方按钮组建 5 人队伍。</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = teams.map(t => `
+        <tr>
+          <td><strong style="color:#fff;">${t.team_id}</strong></td>
+          <td><span class="badge badge-amber">Leader</span> ${t.leader_instance_id || '未指定'}</td>
+          <td>${(t.member_instance_ids || []).map(m => `<span class="badge badge-slate">${m}</span>`).join(' ') || '无队员'}</td>
+          <td><span style="color:var(--cyan);">${t.target_activity}</span></td>
+          <td>${t.is_full ? '<span class="badge badge-green">5人满编</span>' : `<span class="badge badge-amber">${t.total_count}/5 编制</span>`}</td>
+          <td>
+            <button class="danger" onclick="dissolveTeam('${t.team_id}')">解散队伍</button>
+          </td>
+        </tr>
+      `).join('');
+    }
+
+    function renderProxies(proxies) {
+      const tbody = document.getElementById('proxies-table-body');
+      if (!proxies || proxies.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:24px;">暂无注册代理。点击右上角 "+ 注册代理" 添加独享代理 IP。</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = proxies.map(p => {
+        const count = p.active_instance_ids ? p.active_instance_ids.length : 0;
+        let quotaBadge = `<span class="badge badge-green">${count} / 5</span>`;
+        if (count >= 5) quotaBadge = `<span class="badge badge-red">${count} / 5 (满载)</span>`;
+        else if (count >= 4) quotaBadge = `<span class="badge badge-amber">${count} / 5</span>`;
+
+        return `
+          <tr>
+            <td><strong style="color:#fff;">${p.proxy_id}</strong></td>
+            <td>${p.host}:${p.port}</td>
+            <td><span class="badge badge-slate">${p.protocol}</span></td>
+            <td>${quotaBadge}</td>
+            <td>${(p.active_instance_ids || []).map(id => `
+              <span class="badge badge-slate" style="cursor:pointer;" onclick="unbindProxy('${id}')" title="点击解绑">
+                ${id} ✖
+              </span>
+            `).join(' ') || '<span style="color:var(--text-muted);">暂无</span>'}</td>
+            <td>
+              <button class="danger" onclick="unregisterProxy('${p.proxy_id}')">删除</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderAccounts(accounts) {
+      const tbody = document.getElementById('accounts-table-body');
+      if (!accounts || accounts.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:24px;">暂无矩阵账号。点击右上角 "+ 注册账号" 添加。</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = accounts.map(a => {
+        const onlineH = (a.accumulated_online_seconds / 3600).toFixed(1);
+        const maxH = (a.max_daily_online_seconds / 3600).toFixed(1);
+        const pct = Math.min(100, Math.round((a.accumulated_online_seconds / a.max_daily_online_seconds) * 100));
+
+        let statusBadge = `<span class="badge badge-slate">${a.status}</span>`;
+        if (a.status === 'in_use') statusBadge = `<span class="badge badge-green">在线活跃</span>`;
+        else if (a.status === 'resting') statusBadge = `<span class="badge badge-red">生理休息中</span>`;
+        else if (a.status === 'idle') statusBadge = `<span class="badge badge-cyan">就绪空闲</span>`;
+
+        return `
+          <tr>
+            <td><strong style="color:#fff;">${a.account_id}</strong></td>
+            <td>${a.role_name || a.username} <span class="badge badge-slate">${a.sect}</span></td>
+            <td>${a.server_name}</td>
+            <td style="min-width:140px;">
+              <div style="font-size:0.75rem; display:flex; justify-content:space-between;">
+                <span>${onlineH}h / ${maxH}h</span>
+                <span>${pct}%</span>
+              </div>
+              <div class="bar-container">
+                <div class="bar-fill" style="width:${pct}%; background:${pct > 80 ? 'var(--rose)' : 'var(--emerald)'};"></div>
+              </div>
+            </td>
+            <td>${statusBadge}</td>
+            <td style="color:var(--amber); font-weight:600;">${(a.gold || 0).toLocaleString()}</td>
+            <td style="color:#cbd5e1;">${(a.silver || 0).toLocaleString()}</td>
+            <td>
+              ${a.status !== 'resting' ? 
+                `<button onclick="forceRestAccount('${a.account_id}')">☕ 强制休息</button>` : 
+                `<span style="color:var(--text-muted); font-size:0.8rem;">作息轮换中</span>`
+              }
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    // Plugin & Pipeline Loading
+    async function loadPlugins() {
+      try {
+        const res = await fetch('/api/v1/plugins').then(r => r.json());
+        if (res && res.plugins) {
+          cachedPlugins = res.plugins;
+          const select = document.getElementById('launch-plugin');
+          select.innerHTML = res.plugins.map(p => `
+            <option value="${p.id}">${p.name} (${p.id})</option>
+          `).join('');
+          handlePluginChange();
+        }
+      } catch (e) {
+        console.error("Failed to load plugins:", e);
+      }
+    }
+
+    function handlePluginChange() {
+      const pid = document.getElementById('launch-plugin').value;
+      const p = cachedPlugins.find(x => x.id === pid);
+      const pipeSelect = document.getElementById('launch-pipeline');
+      if (p && p.pipelines) {
+        pipeSelect.innerHTML = p.pipelines.map(name => `<option value="${name}">${name}</option>`).join('');
+      } else {
+        fetch(`/api/v1/plugins/${pid}/pipelines`).then(r => r.json()).then(data => {
+          if (data.pipelines) {
+            pipeSelect.innerHTML = data.pipelines.map(x => `<option value="${x.name}">${x.name}</option>`).join('');
+          }
+        }).catch(() => {});
+      }
+    }
+
+    function handleTargetTypeChange() {
+      const type = document.getElementById('launch-target-type').value;
+      document.getElementById('inst-select-group').style.display = type === 'instance_single' ? 'flex' : 'none';
+      document.getElementById('pipeline-select-group').style.display = type === 'global_routine' ? 'none' : 'flex';
+      document.getElementById('routine-pipelines-group').style.display = type === 'global_routine' ? 'flex' : 'none';
+    }
+
+    async function handleStartTask(e) {
+      e.preventDefault();
+      const type = document.getElementById('launch-target-type').value;
+      const plugin = document.getElementById('launch-plugin').value;
+      let vars = {};
+      try {
+        const vText = document.getElementById('launch-vars').value.trim();
+        if (vText) vars = JSON.parse(vText);
+      } catch (err) {
+        alert("初始变量 JSON 解析失败: " + err.message);
+        return;
+      }
+
+      try {
+        if (type === 'global_single') {
+          const pipe = document.getElementById('launch-pipeline').value;
+          const res = await fetch('/api/v1/tasks/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ plugin, pipeline: pipe, device_type: 'auto', variables: vars })
+          }).then(r => r.json());
+          showToast(`单任务已启动: ${pipe}`);
+        } else if (type === 'global_routine') {
+          const pipes = document.getElementById('launch-routine-pipelines').value.split(',').map(s => s.trim()).filter(Boolean);
+          const res = await fetch('/api/v1/tasks/start-routine', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ plugin, routine_name: 'dashboard_routine', pipelines: pipes, device_type: 'auto', variables: vars })
+          }).then(r => r.json());
+          showToast(`任务链已启动: ${pipes.join(' -> ')}`);
+        } else if (type === 'instance_single') {
+          const instId = document.getElementById('launch-instance-id').value;
+          const pipe = document.getElementById('launch-pipeline').value;
+          const res = await fetch(`/api/v1/cluster/instances/${instId}/start`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ plugin, pipeline: pipe, variables: vars })
+          }).then(r => r.json());
+          showToast(`实例 [${instId}] 已启动流水线: ${pipe}`);
+        }
+        refreshAll();
+      } catch (err) {
+        showToast("下发任务失败: " + err.message, true);
+      }
+    }
+
+    // Actions
+    async function stopInstance(instId) {
+      try {
+        await fetch(`/api/v1/cluster/instances/${instId}/stop`, { method: 'POST' });
+        showToast(`实例 [${instId}] 任务已停止`);
+        refreshAll();
+      } catch (e) {
+        showToast("停止任务失败: " + e.message, true);
+      }
+    }
+
+    async function unregisterInstance(instId) {
+      if (!confirm(`确定注销实例 [${instId}] 吗？`)) return;
+      try {
+        await fetch(`/api/v1/cluster/instances/${instId}`, { method: 'DELETE' });
+        showToast(`实例 [${instId}] 已注销`);
+        refreshAll();
+      } catch (e) {
+        showToast("注销失败: " + e.message, true);
+      }
+    }
+
+    async function dissolveTeam(teamId) {
+      if (!confirm(`确定解散队伍 [${teamId}] 吗？`)) return;
+      try {
+        await fetch(`/api/v1/cluster/teams/${teamId}`, { method: 'DELETE' });
+        showToast(`队伍 [${teamId}] 已解散`);
+        refreshAll();
+      } catch (e) {
+        showToast("解散队伍失败: " + e.message, true);
+      }
+    }
+
+    async function unbindProxy(instId) {
+      if (!confirm(`确定解除实例 [${instId}] 的代理绑定吗？`)) return;
+      try {
+        await fetch('/api/v1/cluster/proxies/unbind', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ instance_id: instId })
+        });
+        showToast(`实例 [${instId}] 代理已解绑`);
+        refreshAll();
+      } catch (e) {
+        showToast("解绑代理失败: " + e.message, true);
+      }
+    }
+
+    async function unregisterProxy(proxyId) {
+      if (!confirm(`确定删除代理 [${proxyId}] 吗？`)) return;
+      try {
+        await fetch(`/api/v1/cluster/proxies/${proxyId}`, { method: 'DELETE' });
+        showToast(`代理 [${proxyId}] 已注销`);
+        refreshAll();
+      } catch (e) {
+        showToast("删除代理失败: " + e.message, true);
+      }
+    }
+
+    async function forceRestAccount(accId) {
+      try {
+        await fetch(`/api/v1/cluster/accounts/${accId}/rest`, { method: 'POST' });
+        showToast(`账号 [${accId}] 已进入强制轮换作息`);
+        refreshAll();
+      } catch (e) {
+        showToast("设置休息失败: " + e.message, true);
+      }
+    }
+
+    function quickLaunchInstance(instId) {
+      switchTab('launcher');
+      document.getElementById('launch-target-type').value = 'instance_single';
+      handleTargetTypeChange();
+      document.getElementById('launch-instance-id').value = instId;
+    }
+
+    // Modal dialogs
+    async function openRegisterInstanceModal() {
+      const id = prompt("请输入新实例 ID (例如 inst_06 或 emulator-5564):");
+      if (!id) return;
+      try {
+        await fetch('/api/v1/cluster/instances/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ instance_id: id, device_type: 'virtual' })
+        });
+        showToast(`实例 [${id}] 注册成功`);
+        refreshAll();
+      } catch (e) {
+        showToast("注册失败: " + e.message, true);
+      }
+    }
+
+    async function openRegisterProxyModal() {
+      const id = prompt("请输入代理 ID (例如 proxy_02):", "proxy_02");
+      if (!id) return;
+      const host = prompt("请输入代理 IP 或域名:", "192.168.10.102");
+      if (!host) return;
+      const port = parseInt(prompt("请输入代理端口:", "1080"));
+      try {
+        await fetch('/api/v1/cluster/proxies/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ proxy_id: id, host, port, protocol: 'socks5', max_instances: 5 })
+        });
+        showToast(`代理 [${id}] 注册成功`);
+        refreshAll();
+      } catch (e) {
+        showToast("注册代理失败: " + e.message, true);
+      }
+    }
+
+    async function openCreateTeamModal() {
+      const teamId = prompt("请输入队伍 ID:", "team_02");
+      if (!teamId) return;
+      const leaderId = prompt("请输入队长实例 ID (Leader):", "inst_01");
+      if (!leaderId) return;
+      const members = prompt("请输入队员实例 ID (逗号分隔):", "inst_02,inst_03,inst_04,inst_05");
+      const memberList = members ? members.split(',').map(s => s.trim()) : [];
+      try {
+        await fetch('/api/v1/cluster/team/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ team_id: teamId, leader_id: leaderId, member_ids: memberList, target_activity: 'team_zhuogui' })
+        });
+        showToast(`队伍 [${teamId}] 创建成功`);
+        refreshAll();
+      } catch (e) {
+        showToast("组队失败: " + e.message, true);
+      }
+    }
+
+    async function openRegisterAccountModal() {
+      const accId = prompt("请输入账号 ID:", "acc_06");
+      if (!accId) return;
+      const user = prompt("请输入账号登录名:", "studio_acc_06");
+      try {
+        await fetch('/api/v1/cluster/accounts/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            account_id: accId,
+            username: user,
+            password: "password123",
+            server_name: "东海湾",
+            role_name: "剑侠客06",
+            level: 69,
+            sect: "大唐官府",
+            team_role_preference: "member"
+          })
+        });
+        showToast(`账号 [${accId}] 注册成功`);
+        refreshAll();
+      } catch (e) {
+        showToast("注册账号失败: " + e.message, true);
+      }
+    }
+
+    // Screenshot Modal
+    function openScreenshot(instId) {
+      currentScreenshotInst = instId;
+      document.getElementById('modal-inst-title').innerText = `实例 [${instId}] 实时画面监控`;
+      refreshScreenshot();
+      document.getElementById('screenshot-modal').classList.add('active');
+    }
+
+    function refreshScreenshot() {
+      if (!currentScreenshotInst) return;
+      const img = document.getElementById('modal-screenshot-img');
+      img.src = `/api/v1/cluster/instances/${currentScreenshotInst}/screenshot?t=${Date.now()}`;
+    }
+
+    function closeScreenshotModal() {
+      document.getElementById('screenshot-modal').classList.remove('active');
+      currentScreenshotInst = null;
+    }
+  </script>
+</body>
+</html>

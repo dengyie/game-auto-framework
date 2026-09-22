@@ -1,0 +1,70 @@
+{
+  "name": "jiejie_raid",
+  "entry": "check_tickets",
+  "nodes": [
+    {
+      "name": "check_tickets",
+      "recognition": {
+        "type": "always"
+      },
+      "action": {
+        "type": "none"
+      },
+      "branches": [
+        {
+          "condition": "variables.get('raid_tickets', 0) <= 0",
+          "next": "raid_finish"
+        }
+      ],
+      "next": ["select_target"],
+      "timeout_sec": 15.0
+    },
+    {
+      "name": "select_target",
+      "recognition": {
+        "type": "always"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "select_raid_target"
+      },
+      "next": ["confirm_attack"],
+      "timeout_sec": 15.0
+    },
+    {
+      "name": "confirm_attack",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "is_raid_attack_button_visible"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "click_raid_attack"
+      },
+      "next": ["wait_raid_combat"],
+      "timeout_sec": 15.0
+    },
+    {
+      "name": "wait_raid_combat",
+      "recognition": {
+        "type": "always"
+      },
+      "action": {
+        "type": "wait",
+        "duration": 0.5
+      },
+      "next": ["check_tickets"],
+      "timeout_sec": 60.0
+    },
+    {
+      "name": "raid_finish",
+      "recognition": {
+        "type": "always"
+      },
+      "action": {
+        "type": "none"
+      },
+      "is_terminal": true
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "name": "anti_bot_interceptor",
+  "entry": "check_bounty_popup",
+  "nodes": [
+    {
+      "name": "check_bounty_popup",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "detect_bounty_invite"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "resolve_bounty_invite"
+      },
+      "is_interrupt": true,
+      "next": ["check_bounty_popup"],
+      "timeout_sec": 10.0
+    }
+  ]
+}

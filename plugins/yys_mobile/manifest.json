@@ -1,0 +1,23 @@
+{
+  "id": "yys_mobile",
+  "name": "Onmyoji Automation Plugin",
+  "version": "1.0.0",
+  "author": "game-auto-framework",
+  "description": "Daily automated routines for Onmyoji including Yuhun (Soul 10/11) farming, Realm Raid (Jiejie), and Bounty interceptor",
+  "resolution": {
+    "width": 1280,
+    "height": 720
+  },
+  "aliases": {
+    "yuhun": "yuhun_farm",
+    "mitama": "yuhun_farm",
+    "soul": "yuhun_farm",
+    "jiejie": "jiejie_raid",
+    "raid": "jiejie_raid"
+  },
+  "pipelines": [
+    "pipelines/yuhun.json",
+    "pipelines/jiejiett.json",
+    "pipelines/anti_bot.json"
+  ]
+}
