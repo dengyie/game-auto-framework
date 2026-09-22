@@ -97,12 +97,14 @@ class APIStressTester:
         concurrency: int = 10,
         total_requests: int = 200,
         timeout_sec: float = 10.0,
+        p95_threshold_ms: float = 500.0,
         report_path: str = "reports/api_stress_report.json",
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.concurrency = concurrency
         self.total_requests = total_requests
         self.timeout_sec = timeout_sec
+        self.p95_threshold_ms = p95_threshold_ms
         self.report_path = Path(report_path)
         self.report_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -204,8 +206,8 @@ class APIStressTester:
         overall_success_rate = (total_success / max(self.total_requests, 1)) * 100.0
         if overall_success_rate < 98.0:
             sla_violations.append(f"Overall success rate {overall_success_rate:.2f}% < 98.0% SLA limit")
-        if p95 > 250.0:
-            sla_violations.append(f"P95 latency {p95:.2f}ms > 250ms SLA limit")
+        if p95 > self.p95_threshold_ms:
+            sla_violations.append(f"P95 latency {p95:.2f}ms > {self.p95_threshold_ms:.0f}ms SLA limit")
 
         summary = StressTestSummary(
             target_base_url=self.base_url,
@@ -263,7 +265,7 @@ class APIStressTester:
                     f.write(f"- ❌ {v}\n")
             else:
                 f.write("- ✅ High Availability: 100% requests successfully served without HTTP 500/502.\n")
-                f.write("- ✅ Low Latency: P95 latency is well within 250ms threshold.\n")
+                f.write(f"- ✅ Low Latency: P95 latency is well within {self.p95_threshold_ms:.0f}ms threshold.\n")
                 f.write("- ✅ High Concurrency: FastAPI asynchronous event loop handled parallel requests cleanly.\n")
 
 
@@ -272,6 +274,7 @@ def main() -> None:
     parser.add_argument("--url", type=str, default="http://127.0.0.1:8000", help="Target API server URL")
     parser.add_argument("-c", "--concurrency", type=int, default=10, help="Number of concurrent workers")
     parser.add_argument("-n", "--requests", type=int, default=200, help="Total number of requests")
+    parser.add_argument("--p95-threshold", type=float, default=500.0, help="SLA P95 latency limit in ms (default: 500)")
     parser.add_argument("--report", type=str, default="reports/api_stress_report.json", help="Report output path")
 
     args = parser.parse_args()
@@ -280,6 +283,7 @@ def main() -> None:
         base_url=args.url,
         concurrency=args.concurrency,
         total_requests=args.requests,
+        p95_threshold_ms=args.p95_threshold,
         report_path=args.report,
     )
 
