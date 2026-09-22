@@ -26,3 +26,45 @@ notification:
     bot_token: ""
     chat_id: ""
   feishu_webhook: ""
+
+# Milestone 3: Cluster, Proxy, and Account Configurations
+cluster:
+  enabled: true
+  instances:
+    - id: "inst_01"
+      type: "adb"
+      serial: "127.0.0.1:5555"
+      name: "Emulator_Leader"
+    - id: "inst_02"
+      type: "adb"
+      serial: "127.0.0.1:5556"
+      name: "Emulator_Member_1"
+  teams:
+    - id: "team_01"
+      leader: "inst_01"
+      members: ["inst_02"]
+      activity: "team_zhuogui"
+  supervisor:
+    check_interval_sec: 10.0
+    stall_threshold_sec: 60.0
+    max_reconnect_attempts: 3
+    max_app_restarts: 3
+    enable_app_watchdog: true
+    target_package: "com.netease.my"
+    enable_webhook_alerts: true
+    enable_account_rotation: true
+
+proxy:
+  enforce_strict_quota: true  # <= 5 accounts per proxy
+  proxies:
+    - id: "proxy_sg_01"
+      protocol: "socks5"
+      host: "192.168.1.100"
+      port: 1080
+      max_instances: 5
+
+account:
+  auto_rest: true
+  max_continuous_online_hours: [2.5, 4.0]
+  rest_duration_minutes: [20, 40]
+

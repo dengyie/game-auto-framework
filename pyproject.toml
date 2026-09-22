@@ -38,7 +38,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["core", "scheduler", "plugins", "server"]
+packages = ["core", "scheduler", "plugins", "server", "cluster"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
