@@ -18,8 +18,8 @@
     "max_continuous_online_seconds": 13316.25,
     "rest_duration_seconds": 1703.69,
     "resting_until": 0.0,
-    "bound_instance_id": null,
-    "bound_proxy_id": null
+    "bound_instance_id": "inst_01",
+    "bound_proxy_id": "proxy_sh_01"
   },
   {
     "account_id": "acc_team01_02_member",
@@ -40,8 +40,8 @@
     "max_continuous_online_seconds": 13159.34,
     "rest_duration_seconds": 1577.41,
     "resting_until": 0.0,
-    "bound_instance_id": null,
-    "bound_proxy_id": null
+    "bound_instance_id": "inst_02",
+    "bound_proxy_id": "proxy_sh_02"
   },
   {
     "account_id": "acc_team01_03_member",
@@ -62,8 +62,8 @@
     "max_continuous_online_seconds": 10604.77,
     "rest_duration_seconds": 1294.73,
     "resting_until": 0.0,
-    "bound_instance_id": null,
-    "bound_proxy_id": null
+    "bound_instance_id": "inst_03",
+    "bound_proxy_id": "proxy_sh_03"
   },
   {
     "account_id": "acc_team01_04_member",
@@ -84,8 +84,8 @@
     "max_continuous_online_seconds": 9429.46,
     "rest_duration_seconds": 2198.51,
     "resting_until": 0.0,
-    "bound_instance_id": null,
-    "bound_proxy_id": null
+    "bound_instance_id": "inst_04",
+    "bound_proxy_id": "proxy_sh_04"
   },
   {
     "account_id": "acc_team01_05_member",
@@ -106,7 +106,7 @@
     "max_continuous_online_seconds": 9978.65,
     "rest_duration_seconds": 2126.65,
     "resting_until": 0.0,
-    "bound_instance_id": null,
-    "bound_proxy_id": null
+    "bound_instance_id": "inst_05",
+    "bound_proxy_id": "proxy_sh_05"
   }
 ]

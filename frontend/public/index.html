@@ -74,9 +74,7 @@
     .tab-pane.active { display: block; animation: fadeIn 0.2s ease-in-out; }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
     
-    /* ======================================================== */
-    /* Tab 2: Live Video Stream & Monitor Styles                */
-    /* ======================================================== */
+    /* Live Video Stream & Monitor Styles */
     .video-console { display: flex; flex-direction: column; gap: 16px; }
     .video-toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; background: var(--bg-secondary); border: 1px solid var(--border-color); padding: 12px 16px; border-radius: var(--radius); }
     .video-stage { background: #000; border: 1px solid var(--border-color); border-radius: var(--radius); overflow: hidden; position: relative; display: flex; justify-content: center; align-items: center; min-height: 520px; box-shadow: 0 10px 30px rgba(0,0,0,0.7); }
@@ -148,6 +146,21 @@
     #toast { position: fixed; bottom: 24px; right: 24px; background: var(--bg-card); border: 1px solid var(--border-color); padding: 12px 20px; border-radius: var(--radius); font-size: 0.88rem; display: none; z-index: 2000; box-shadow: 0 10px 20px rgba(0, 0, 0, 0.5); }
     #toast.success { border-color: var(--emerald); color: var(--emerald); display: block; }
     #toast.error { border-color: var(--rose); color: var(--rose); display: block; }
+
+    /* Responsive Design / Mobile Adaptations */
+    @media (max-width: 768px) {
+      header { flex-direction: column; align-items: flex-start; gap: 12px; padding: 12px 16px; }
+      .header-controls { width: 100%; flex-wrap: wrap; justify-content: space-between; gap: 8px; }
+      main { padding: 12px; gap: 14px; }
+      .kpi-grid { grid-template-columns: 1fr; }
+      .video-stage { min-height: 280px; }
+      .video-toolbar { flex-direction: column; align-items: stretch; }
+      .virtual-nav-bar { flex-direction: column; align-items: stretch; }
+      .nav-btn-group { justify-content: center; flex-wrap: wrap; }
+      .form-grid { grid-template-columns: 1fr; }
+      .form-group.full-width { grid-column: span 1; }
+      #pane-agent > div { grid-template-columns: 1fr !important; }
+    }
   </style>
 </head>
 <body>
@@ -197,56 +210,68 @@
 
       <div class="kpi-card">
         <div class="kpi-header">
-          <span class="kpi-title"><span id="kpi-icon-proxy"></span> 独享代理池合规</span>
+          <span class="kpi-title"><span id="kpi-icon-proxy"></span> 独享代理池负载</span>
           <span class="badge badge-green" id="kpi-proxy-quota">防风控安全</span>
         </div>
         <div class="kpi-value" id="kpi-proxy-active">0 <span style="font-size:0.9rem; font-weight:normal; color:var(--text-muted);">活跃代理</span></div>
         <div class="kpi-sub">
-          <span>总负载: <strong id="kpi-proxy-util" style="color:var(--text-main);">0 / 0</strong></span>
-          <span>单 IP 限制: <strong style="color:var(--emerald);">≤ 5 台</strong></span>
+          <span>总承载绑定: <strong id="kpi-proxy-util" style="color:var(--text-main);">0 / 0</strong></span>
+          <span>策略: <strong style="color:var(--cyan);">单 IP ≤ 5 实例</strong></span>
         </div>
       </div>
 
       <div class="kpi-card">
         <div class="kpi-header">
-          <span class="kpi-title"><span id="kpi-icon-acc"></span> 账号矩阵收益</span>
+          <span class="kpi-title"><span id="kpi-icon-acc"></span> 账号与金币资产</span>
           <span class="badge badge-amber" id="kpi-acc-total">0 账号</span>
         </div>
         <div class="kpi-value" id="kpi-gold-total">0 <span style="font-size:0.9rem; font-weight:normal; color:var(--amber);">金币</span></div>
         <div class="kpi-sub">
-          <span>银币: <strong id="kpi-silver-total" style="color:#cbd5e1;">0</strong></span>
+          <span>银币: <strong id="kpi-silver-total">0</strong></span>
           <span>在线: <strong id="kpi-acc-online" style="color:var(--emerald);">0</strong></span>
-          <span>疲劳休息: <strong id="kpi-acc-resting" style="color:var(--rose);">0</strong></span>
+          <span>疲劳作息: <strong id="kpi-acc-resting" style="color:var(--text-muted);">0</strong></span>
         </div>
       </div>
 
       <div class="kpi-card">
         <div class="kpi-header">
-          <span class="kpi-title"><span id="kpi-icon-sup"></span> 7x24h 看门狗监管</span>
+          <span class="kpi-title"><span id="kpi-icon-sup"></span> 自愈监控巡检</span>
           <span class="badge badge-green" id="kpi-sup-status">ACTIVE</span>
         </div>
         <div class="kpi-value" id="kpi-sup-passes">0 <span style="font-size:0.9rem; font-weight:normal; color:var(--text-muted);">次巡检</span></div>
         <div class="kpi-sub">
-          <span>异常自愈: <strong id="kpi-sup-recovered" style="color:var(--cyan);">0</strong></span>
-          <span>心跳: <strong id="kpi-sup-hb" style="color:var(--text-muted);">--</strong></span>
+          <span>故障自动恢复: <strong id="kpi-sup-recovered" style="color:var(--emerald);">0</strong></span>
+          <span>最后心跳: <strong id="kpi-sup-hb" style="color:var(--text-muted);">--</strong></span>
         </div>
       </div>
     </div>
 
     <!-- Navigation Tabs -->
     <div class="tab-nav">
-      <button class="tab-btn active" onclick="switchTab('instances')"><span id="tab-icon-instances"></span> 实例集群 (<span id="tab-cnt-inst">0</span>)</button>
-      <button class="tab-btn" onclick="switchTab('stream')"><span id="tab-icon-stream"></span> 实时视频监控与画面</button>
-      <button class="tab-btn" onclick="switchTab('teams')"><span id="tab-icon-teams"></span> 组队拓扑 (<span id="tab-cnt-teams">0</span>)</button>
-      <button class="tab-btn" onclick="switchTab('proxies')"><span id="tab-icon-proxies"></span> 独享代理池 (<span id="tab-cnt-proxies">0</span>)</button>
-      <button class="tab-btn" onclick="switchTab('accounts')"><span id="tab-icon-accounts"></span> 账号与作息 (<span id="tab-cnt-accounts">0</span>)</button>
-      <button class="tab-btn" onclick="switchTab('soak')"><span id="tab-icon-soak"></span> 24h 压测与时序遥测</button>
-      <button class="tab-btn" onclick="switchTab('agent')"><span id="tab-icon-agent"></span> AI 任务调度与执行流</button>
+      <button class="tab-btn active" onclick="switchTab('instances')">
+        <span id="tab-icon-instances"></span> 集群实例矩阵 (<span id="tab-cnt-inst">5</span>)
+      </button>
+      <button class="tab-btn" onclick="switchTab('stream')">
+        <span id="tab-icon-stream"></span> 设备监控画面 (Live Stream)
+      </button>
+      <button class="tab-btn" onclick="switchTab('teams')">
+        <span id="tab-icon-teams"></span> 5人协作队伍 (<span id="tab-cnt-teams">1</span>)
+      </button>
+      <button class="tab-btn" onclick="switchTab('proxies')">
+        <span id="tab-icon-proxies"></span> 独享代理池 (<span id="tab-cnt-proxies">2</span>)
+      </button>
+      <button class="tab-btn" onclick="switchTab('accounts')">
+        <span id="tab-icon-accounts"></span> 游戏账号与作息 (<span id="tab-cnt-accounts">5</span>)
+      </button>
+      <button class="tab-btn" onclick="switchTab('soak')">
+        <span id="tab-icon-soak"></span> 24h极限压测与遥测
+      </button>
+      <button class="tab-btn" onclick="switchTab('agent')">
+        <span id="tab-icon-agent"></span> AI 任务下发与链路跟踪
+      </button>
     </div>
 
-    <!-- ======================================================== -->
-    <!-- Tab 1: Instances                                         -->
-    <!-- ======================================================== -->
+    <!-- Tab 1: Cluster Instances -->
     <div id="pane-instances" class="tab-pane active">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
         <h3 style="font-size:1.05rem;">集群实例列表</h3>
@@ -257,9 +282,7 @@
       </div>
     </div>
 
-    <!-- ======================================================== -->
-    <!-- Tab 2: Live Video Stream & Real-time Monitor (NEW)      -->
-    <!-- ======================================================== -->
+    <!-- Tab 2: Live Video Stream & Real-time Monitor -->
     <div id="pane-stream" class="tab-pane">
       <div class="video-console">
         <!-- Video Toolbar -->
@@ -303,7 +326,7 @@
           <div class="video-stage" id="video-stage-container">
             <!-- Badges Overlay -->
             <div class="stream-overlay">
-              <div class="stream-badge"><span class="pulse-dot"></span> <span id="stream-active-inst-label">inst_01</span> (LIVE)</div>
+              <div class="stream-badge"><span class="pulse-dot"></span> <span id="stream-active-inst-label">inst_01 (LIVE)</span></div>
               <div class="stream-badge" id="stream-pipeline-badge">流水线: daily_shimen</div>
             </div>
 
@@ -337,8 +360,8 @@
               <button onclick="sendDeviceSwipe('left')">← 左滑</button>
               <button onclick="sendDeviceSwipe('right')">→ 右滑</button>
             </div>
-            <div style="font-size:0.75rem; color:var(--cyan); margin-left:auto;">
-              💡 提示: 直接点击画面任意位置可直接发送拟人化触屏点击
+            <div style="font-size:0.75rem; color:var(--cyan); margin-left:auto; display:flex; align-items:center; gap:4px;">
+              <span id="icon-nav-hint"></span> 提示: 直接点击画面任意位置可下发高精度虚拟触屏点击
             </div>
           </div>
         </div>
@@ -350,9 +373,7 @@
       </div>
     </div>
 
-    <!-- ======================================================== -->
-    <!-- Tab 3: Teams Topology                                    -->
-    <!-- ======================================================== -->
+    <!-- Tab 3: Teams Topology -->
     <div id="pane-teams" class="tab-pane">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
         <h3 style="font-size:1.05rem;">5人协作组队拓扑</h3>
@@ -377,9 +398,7 @@
       </div>
     </div>
 
-    <!-- ======================================================== -->
-    <!-- Tab 4: Proxies Pool                                      -->
-    <!-- ======================================================== -->
+    <!-- Tab 4: Proxies Pool -->
     <div id="pane-proxies" class="tab-pane">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
         <h3 style="font-size:1.05rem;">独享代理 IP 列表 (严格限制单 IP ≤ 5 实例)</h3>
@@ -404,9 +423,7 @@
       </div>
     </div>
 
-    <!-- ======================================================== -->
-    <!-- Tab 5: Accounts & Fatigue                                -->
-    <!-- ======================================================== -->
+    <!-- Tab 5: Accounts & Fatigue -->
     <div id="pane-accounts" class="tab-pane">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
         <h3 style="font-size:1.05rem;">账号矩阵资产与生理疲劳作息</h3>
@@ -433,15 +450,15 @@
       </div>
     </div>
 
-    <!-- ======================================================== -->
-    <!-- Tab 6: 24h Soak Test & API Stress                        -->
-    <!-- ======================================================== -->
+    <!-- Tab 6: 24h Soak Test & API Stress -->
     <div id="pane-soak" class="tab-pane">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
-        <h3 style="font-size:1.05rem;">⚡ 24h 极限压测与时序遥测大盘</h3>
+        <h3 style="font-size:1.05rem; display:flex; align-items:center; gap:6px;">
+          <span id="icon-soak-title"></span> 24h 极限压测与时序遥测大盘
+        </h3>
         <div style="display:flex; gap:10px;">
-          <button id="btn-soak-toggle" class="primary" onclick="toggleSoakTest()">▶ 启动 24h 压测</button>
-          <button class="primary" style="background:#4f46e5; border-color:#818cf8;" onclick="triggerApiStressModal()">🔥 发起 500+ QPS API 打压</button>
+          <button id="btn-soak-toggle" class="primary" onclick="toggleSoakTest()">启动 24h 压测</button>
+          <button class="primary" style="background:#4f46e5; border-color:#818cf8;" onclick="triggerApiStressModal()"><span id="icon-btn-stress"></span> 发起 500+ QPS API 打压</button>
         </div>
       </div>
 
@@ -522,9 +539,7 @@
       </div>
     </div>
 
-    <!-- ======================================================== -->
-    <!-- Tab 7: AI Agent & Task Launcher (NEW)                    -->
-    <!-- ======================================================== -->
+    <!-- Tab 7: AI Agent & Task Launcher -->
     <div id="pane-agent" class="tab-pane">
       <div style="display:grid; grid-template-columns: 1fr 1.2fr; gap:20px;">
         <!-- Left: Task & Routine Launcher Form -->
@@ -668,13 +683,13 @@
   <div class="modal-overlay" id="register-proxy-modal">
     <div class="modal-box" style="max-width:520px;">
       <div class="modal-head">
-        <h3>注册独享代理 IP</h3>
+        <h3>注册独享代理节点</h3>
         <button class="danger" onclick="closeModal('register-proxy-modal')">关闭</button>
       </div>
       <div class="modal-body" style="align-items:stretch;">
         <div class="form-group">
-          <label>代理 ID</label>
-          <input type="text" id="reg-proxy-id" placeholder="proxy_hk_02">
+          <label>代理标识 (Proxy ID)</label>
+          <input type="text" id="reg-proxy-id" placeholder="proxy_hk_03">
         </div>
         <div class="form-group">
           <label>代理协议</label>
@@ -685,14 +700,14 @@
           </select>
         </div>
         <div class="form-group">
-          <label>代理主机 IP / 域名</label>
-          <input type="text" id="reg-proxy-host" placeholder="45.202.199.205">
+          <label>主机 IP / 域名</label>
+          <input type="text" id="reg-proxy-host" placeholder="103.21.244.15">
         </div>
         <div class="form-group">
           <label>端口</label>
-          <input type="number" id="reg-proxy-port" placeholder="1080">
+          <input type="number" id="reg-proxy-port" placeholder="10808">
         </div>
-        <button class="primary" style="margin-top:10px; justify-content:center;" onclick="submitRegisterProxy()">注册并录入代理池</button>
+        <button class="primary" style="margin-top:10px; justify-content:center;" onclick="submitRegisterProxy()">保存代理节点</button>
       </div>
     </div>
   </div>
@@ -730,7 +745,7 @@
   <div class="modal-overlay" id="api-stress-modal">
     <div class="modal-box" style="max-width:560px;">
       <div class="modal-head">
-        <h3>🔥 发起高并发 API 压力测试 (500+ QPS)</h3>
+        <h3 style="display:flex; align-items:center; gap:8px;"><span id="icon-modal-stress"></span> 发起高并发 API 压力测试 (500+ QPS)</h3>
         <button class="danger" onclick="closeModal('api-stress-modal')">关闭</button>
       </div>
       <div class="modal-body" style="align-items:stretch;">
@@ -757,9 +772,7 @@
   <!-- Toast Notification -->
   <div id="toast"></div>
 
-  <!-- ======================================================== -->
-  <!-- JavaScript Logic & Awesome UI Kit Components            -->
-  <!-- ======================================================== -->
+  <!-- JavaScript Logic & Awesome UI Kit Components -->
   <script type="module">
     // 1. UiIcon Tabler geometry definitions
     const ICONS = {
@@ -798,27 +811,40 @@
     }
     window.uiIcon = uiIcon;
 
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+    window.escapeHtml = escapeHtml;
+
     // 2. Register Awesome UI Kit Web Components
     // StatusIndicator Component
     class StatusIndicator extends HTMLElement {
       static get observedAttributes() { return ["status", "label", "ping-ms"]; }
       connectedCallback() { this.render(); }
-      attributeChangedCallback() { this.render(); }
+      attributeChangedCallback() { if (this.isConnected) this.render(); }
       render() {
         const status = this.getAttribute("status") || "online";
         const label = this.getAttribute("label") || "Connected";
         const pingMs = this.getAttribute("ping-ms");
-        let dotBg = "#10b981", pingBg = "rgba(16,185,129,0.3)", text = "#34d399", badgeBg = "rgba(16,185,129,0.12)", border = "rgba(16,185,129,0.3)";
+        let dotBg = "#10b981", text = "#34d399", badgeBg = "rgba(16,185,129,0.12)", border = "rgba(16,185,129,0.3)";
         if (status === "busy") {
           dotBg = "#f59e0b"; text = "#fbbf24"; badgeBg = "rgba(245,158,11,0.12)"; border = "rgba(245,158,11,0.3)";
         } else if (status === "error" || status === "offline") {
           dotBg = "#f43f5e"; text = "#fb7185"; badgeBg = "rgba(244,63,94,0.12)"; border = "rgba(244,63,94,0.3)";
+        } else if (status === "neutral") {
+          dotBg = "#94a3b8"; text = "#cbd5e1"; badgeBg = "rgba(148,163,184,0.12)"; border = "rgba(148,163,184,0.3)";
         }
         this.innerHTML = `
           <div style="display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:999px; background:${badgeBg}; border:1px solid ${border}; color:${text}; font-size:0.75rem; font-weight:600;">
             <span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:${dotBg};"></span>
-            <span>${label}</span>
-            ${pingMs ? `<span style="opacity:0.75; font-family:monospace;">(${pingMs}ms)</span>` : ''}
+            <span>${escapeHtml(label)}</span>
+            ${pingMs ? `<span style="opacity:0.75; font-family:monospace;">(${escapeHtml(pingMs)}ms)</span>` : ''}
           </div>
         `;
       }
@@ -828,10 +854,15 @@
     // ToolCallBadge Component
     class ToolCallBadge extends HTMLElement {
       static get observedAttributes() { return ["name", "status", "args", "output", "error"]; }
-      connectedCallback() { this.isOpen = false; this.render(); }
-      attributeChangedCallback() { this.render(); }
+      connectedCallback() {
+        if (this.isOpen === undefined) this.isOpen = false;
+        this.render();
+      }
+      attributeChangedCallback() {
+        if (this.isConnected) this.render();
+      }
       render() {
-        const name = this.getAttribute("name") || "tool";
+        const name = escapeHtml(this.getAttribute("name") || "tool");
         const status = this.getAttribute("status") || "running";
         const args = this.getAttribute("args");
         const output = this.getAttribute("output");
@@ -855,17 +886,22 @@
               </div>
             </button>
             <div class="tool-drawer" style="display:${this.isOpen ? 'block' : 'none'}; padding:10px 12px; border-top:1px solid var(--border-color); background:rgba(0,0,0,0.25); font-family:monospace; font-size:0.75rem;">
-              ${args ? `<div><div style="color:var(--text-muted); font-weight:600; margin-bottom:2px;">输入参数 (Arguments):</div><pre style="padding:6px; background:#0f172a; border-radius:4px; overflow-x:auto; margin-bottom:6px; color:#cbd5e1;">${args}</pre></div>` : ''}
-              ${output ? `<div><div style="color:var(--text-muted); font-weight:600; margin-bottom:2px;">返回输出 (Output):</div><pre style="padding:6px; background:#0f172a; border-radius:4px; overflow-x:auto; max-height:160px; color:#cbd5e1;">${output}</pre></div>` : ''}
-              ${error ? `<div><div style="color:var(--rose); font-weight:600; margin-bottom:2px;">错误 (Error):</div><pre style="padding:6px; background:rgba(244,63,94,0.1); border-radius:4px; overflow-x:auto; color:var(--rose);">${error}</pre></div>` : ''}
+              ${args ? `<div><div style="color:var(--text-muted); font-weight:600; margin-bottom:2px;">输入参数 (Arguments):</div><pre style="padding:6px; background:#0f172a; border-radius:4px; overflow-x:auto; margin-bottom:6px; color:#cbd5e1;">${escapeHtml(args)}</pre></div>` : ''}
+              ${output ? `<div><div style="color:var(--text-muted); font-weight:600; margin-bottom:2px;">返回输出 (Output):</div><pre style="padding:6px; background:#0f172a; border-radius:4px; overflow-x:auto; max-height:160px; color:#cbd5e1;">${escapeHtml(output)}</pre></div>` : ''}
+              ${error ? `<div><div style="color:var(--rose); font-weight:600; margin-bottom:2px;">错误 (Error):</div><pre style="padding:6px; background:rgba(244,63,94,0.1); border-radius:4px; overflow-x:auto; color:var(--rose);">${escapeHtml(error)}</pre></div>` : ''}
             </div>
           </div>
         `;
-        this.querySelector(".tool-head-btn").addEventListener("click", () => {
-          this.isOpen = !this.isOpen;
-          this.querySelector(".tool-drawer").style.display = this.isOpen ? "block" : "none";
-          this.querySelector(".chevron-icon").style.transform = this.isOpen ? "rotate(90deg)" : "rotate(0deg)";
-        });
+        const btn = this.querySelector(".tool-head-btn");
+        if (btn) {
+          btn.addEventListener("click", () => {
+            this.isOpen = !this.isOpen;
+            const drawer = this.querySelector(".tool-drawer");
+            const chev = this.querySelector(".chevron-icon");
+            if (drawer) drawer.style.display = this.isOpen ? "block" : "none";
+            if (chev) chev.style.transform = this.isOpen ? "rotate(90deg)" : "rotate(0deg)";
+          });
+        }
       }
     }
     if (!customElements.get("tool-call-badge")) customElements.define("tool-call-badge", ToolCallBadge);
@@ -873,8 +909,13 @@
     // ThinkingBlock Component
     class ThinkingBlock extends HTMLElement {
       static get observedAttributes() { return ["content", "is-thinking"]; }
-      connectedCallback() { this.isOpen = true; this.render(); }
-      attributeChangedCallback() { this.render(); }
+      connectedCallback() {
+        if (this.isOpen === undefined) this.isOpen = true;
+        this.render();
+      }
+      attributeChangedCallback() {
+        if (this.isConnected) this.render();
+      }
       render() {
         const content = this.getAttribute("content") || "正在分析推理游戏决策链路...";
         const isThinking = this.getAttribute("is-thinking") === "true";
@@ -888,46 +929,60 @@
               <span class="think-chevron" style="transform:${this.isOpen ? 'rotate(90deg)' : 'rotate(0deg)'}; transition:transform 0.2s;">${uiIcon('chevron-right', { size:14 })}</span>
             </button>
             <div class="think-drawer" style="display:${this.isOpen ? 'block' : 'none'}; padding:10px 14px; border-top:1px dashed rgba(56, 189, 248, 0.2); color:#cbd5e1; font-size:0.78rem; line-height:1.5;">
-              ${content}
+              ${escapeHtml(content)}
             </div>
           </div>
         `;
-        this.querySelector(".think-head-btn").addEventListener("click", () => {
-          this.isOpen = !this.isOpen;
-          this.querySelector(".think-drawer").style.display = this.isOpen ? "block" : "none";
-          this.querySelector(".think-chevron").style.transform = this.isOpen ? "rotate(90deg)" : "rotate(0deg)";
-        });
+        const btn = this.querySelector(".think-head-btn");
+        if (btn) {
+          btn.addEventListener("click", () => {
+            this.isOpen = !this.isOpen;
+            const drawer = this.querySelector(".think-drawer");
+            const chev = this.querySelector(".think-chevron");
+            if (drawer) drawer.style.display = this.isOpen ? "block" : "none";
+            if (chev) chev.style.transform = this.isOpen ? "rotate(90deg)" : "rotate(0deg)";
+          });
+        }
       }
     }
     if (!customElements.get("thinking-block")) customElements.define("thinking-block", ThinkingBlock);
 
-    // Render UiIcons into layout
-    document.getElementById("brand-logo-icon").innerHTML = uiIcon('video', { size: 18 });
-    document.getElementById("icon-btn-refresh").innerHTML = uiIcon('refresh', { size: 14 });
-    document.getElementById("icon-btn-docs").innerHTML = uiIcon('external-link', { size: 14 });
-    document.getElementById("kpi-icon-inst").innerHTML = uiIcon('monitor', { size: 15 });
-    document.getElementById("kpi-icon-proxy").innerHTML = uiIcon('globe', { size: 15 });
-    document.getElementById("kpi-icon-acc").innerHTML = uiIcon('lock', { size: 15 });
-    document.getElementById("kpi-icon-sup").innerHTML = uiIcon('shield', { size: 15 });
+    // Render UiIcons into layout safely
+    const setIcon = (id, iconHtml) => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = iconHtml;
+    };
 
-    document.getElementById("tab-icon-instances").innerHTML = uiIcon('monitor', { size: 16 });
-    document.getElementById("tab-icon-stream").innerHTML = uiIcon('video', { size: 16 });
-    document.getElementById("tab-icon-teams").innerHTML = uiIcon('layers', { size: 16 });
-    document.getElementById("tab-icon-proxies").innerHTML = uiIcon('globe', { size: 16 });
-    document.getElementById("tab-icon-accounts").innerHTML = uiIcon('lock', { size: 16 });
-    document.getElementById("tab-icon-soak").innerHTML = uiIcon('zap', { size: 16 });
-    document.getElementById("tab-icon-agent").innerHTML = uiIcon('terminal', { size: 16 });
+    setIcon("brand-logo-icon", uiIcon('video', { size: 18 }));
+    setIcon("icon-btn-refresh", uiIcon('refresh', { size: 14 }));
+    setIcon("icon-btn-docs", uiIcon('external-link', { size: 14 }));
+    setIcon("kpi-icon-inst", uiIcon('monitor', { size: 15 }));
+    setIcon("kpi-icon-proxy", uiIcon('globe', { size: 15 }));
+    setIcon("kpi-icon-acc", uiIcon('lock', { size: 15 }));
+    setIcon("kpi-icon-sup", uiIcon('shield', { size: 15 }));
 
-    document.getElementById("vtoolbar-icon-cam").innerHTML = uiIcon('video', { size: 18 });
-    document.getElementById("icon-btn-snap").innerHTML = uiIcon('download', { size: 14 });
-    document.getElementById("icon-btn-fs").innerHTML = uiIcon('maximize', { size: 14 });
-    document.getElementById("icon-nav-touch").innerHTML = uiIcon('crosshair', { size: 14 });
-    document.getElementById("icon-nav-back").innerHTML = uiIcon('arrow-left', { size: 13 });
-    document.getElementById("icon-nav-home").innerHTML = uiIcon('square', { size: 13 });
-    document.getElementById("icon-nav-menu").innerHTML = uiIcon('layers', { size: 13 });
-    document.getElementById("agent-icon-rocket").innerHTML = uiIcon('zap', { size: 16 });
-    document.getElementById("agent-icon-trace").innerHTML = uiIcon('terminal', { size: 16 });
-    document.getElementById("icon-btn-play").innerHTML = uiIcon('play', { size: 14 });
+    setIcon("tab-icon-instances", uiIcon('monitor', { size: 16 }));
+    setIcon("tab-icon-stream", uiIcon('video', { size: 16 }));
+    setIcon("tab-icon-teams", uiIcon('layers', { size: 16 }));
+    setIcon("tab-icon-proxies", uiIcon('globe', { size: 16 }));
+    setIcon("tab-icon-accounts", uiIcon('lock', { size: 16 }));
+    setIcon("tab-icon-soak", uiIcon('zap', { size: 16 }));
+    setIcon("tab-icon-agent", uiIcon('terminal', { size: 16 }));
+
+    setIcon("vtoolbar-icon-cam", uiIcon('video', { size: 18 }));
+    setIcon("icon-btn-snap", uiIcon('download', { size: 14 }));
+    setIcon("icon-btn-fs", uiIcon('maximize', { size: 14 }));
+    setIcon("icon-nav-touch", uiIcon('crosshair', { size: 14 }));
+    setIcon("icon-nav-back", uiIcon('arrow-left', { size: 13 }));
+    setIcon("icon-nav-home", uiIcon('square', { size: 13 }));
+    setIcon("icon-nav-menu", uiIcon('layers', { size: 13 }));
+    setIcon("icon-nav-hint", uiIcon('sparkles', { size: 13 }));
+    setIcon("icon-soak-title", uiIcon('zap', { size: 16 }));
+    setIcon("icon-btn-stress", uiIcon('zap', { size: 14 }));
+    setIcon("icon-modal-stress", uiIcon('zap', { size: 16 }));
+    setIcon("agent-icon-rocket", uiIcon('zap', { size: 16 }));
+    setIcon("agent-icon-trace", uiIcon('terminal', { size: 16 }));
+    setIcon("icon-btn-play", uiIcon('play', { size: 14 }));
   </script>
 
   <!-- Core Dashboard Application Script -->
@@ -938,6 +993,11 @@
     let streamFps = 10;
     let streamInstance = 'inst_01';
     let snapshotTimer = null;
+    let streamReconnectTimer = null;
+    let streamRetryCount = 0;
+    let isStreamActive = false;
+    let isRefreshing = false;
+    let isSoakRunning = false;
     let viewMode = 'cinema';
 
     // Clock
@@ -954,6 +1014,7 @@
       t.innerText = msg;
       setTimeout(() => { t.className = ''; }, 3500);
     }
+    window.showToast = showToast;
 
     function switchTab(tabId) {
       currentTab = tabId;
@@ -989,7 +1050,7 @@
 
     function onStreamInstanceChange() {
       streamInstance = document.getElementById('stream-instance-select').value;
-      document.getElementById('stream-active-inst-label').innerText = streamInstance;
+      updateStreamStatusBadge('SELECTED');
       activateLiveStream();
     }
     window.onStreamInstanceChange = onStreamInstanceChange;
@@ -1007,22 +1068,89 @@
     }
     window.onStreamFpsChange = onStreamFpsChange;
 
-    function activateLiveStream() {
+    function getStreamUrl() {
+      const t = Date.now();
+      if (streamProtocol === 'mjpeg') {
+        return streamInstance === 'global'
+          ? `/api/v1/stream?fps=${streamFps}&t=${t}`
+          : `/api/v1/stream?instance_id=${streamInstance}&fps=${streamFps}&t=${t}`;
+      } else {
+        return streamInstance === 'global'
+          ? `/api/v1/screenshot?t=${t}`
+          : `/api/v1/cluster/instances/${streamInstance}/screenshot?t=${t}`;
+      }
+    }
+
+    function updateStreamStatusBadge(label) {
+      const badge = document.getElementById('stream-active-inst-label');
+      if (badge) {
+        badge.innerText = `${streamInstance} (${label})`;
+      }
+    }
+
+    function cleanupStream() {
       if (snapshotTimer) {
         clearInterval(snapshotTimer);
         snapshotTimer = null;
       }
+      if (streamReconnectTimer) {
+        clearTimeout(streamReconnectTimer);
+        streamReconnectTimer = null;
+      }
+    }
+
+    function activateLiveStream() {
+      cleanupStream();
+      isStreamActive = true;
       const img = document.getElementById('main-video-img');
-      const startT = performance.now();
+      if (!img) return;
+
+      updateStreamStatusBadge('CONNECTING');
+
       if (streamProtocol === 'mjpeg') {
-        const streamUrl = streamInstance === 'global' ? `/api/v1/stream?fps=${streamFps}` : `/api/v1/stream?instance_id=${streamInstance}&fps=${streamFps}`;
-        img.src = streamUrl;
-      } else {
-        const fetchSnap = () => {
-          const snapUrl = streamInstance === 'global' ? `/api/v1/screenshot?t=${Date.now()}` : `/api/v1/cluster/instances/${streamInstance}/screenshot?t=${Date.now()}`;
-          img.src = snapUrl;
+        const startT = performance.now();
+        img.onload = () => {
+          streamRetryCount = 0;
+          updateStreamStatusBadge('LIVE');
           const latency = Math.round(performance.now() - startT);
-          document.getElementById('stream-latency-badge').innerText = `延迟: ${Math.min(latency, 250)}ms`;
+          const latEl = document.getElementById('stream-latency-badge');
+          if (latEl) latEl.innerText = `延迟: ${Math.min(latency, 250)}ms`;
+        };
+
+        img.onerror = () => {
+          if (!isStreamActive) return;
+          streamRetryCount++;
+          if (streamRetryCount > 3) {
+            showToast('连续重连超时，已自动回退到动态快照轮询模式', true);
+            streamProtocol = 'snapshot';
+            const protoSel = document.getElementById('stream-proto-select');
+            if (protoSel) protoSel.value = 'snapshot';
+            activateLiveStream();
+            return;
+          }
+          const backoffMs = Math.min(8000, 1000 * Math.pow(2, streamRetryCount - 1));
+          updateStreamStatusBadge(`RECONNECTING ${streamRetryCount}`);
+          streamReconnectTimer = setTimeout(() => {
+            if (isStreamActive) {
+              img.src = getStreamUrl();
+            }
+          }, backoffMs);
+        };
+
+        img.src = getStreamUrl();
+      } else {
+        updateStreamStatusBadge('SNAPSHOT');
+        const fetchSnap = () => {
+          if (!isStreamActive) return;
+          const startT = performance.now();
+          const nextImg = new Image();
+          nextImg.onload = () => {
+            img.src = nextImg.src;
+            const latency = Math.round(performance.now() - startT);
+            const latEl = document.getElementById('stream-latency-badge');
+            if (latEl) latEl.innerText = `延迟: ${Math.min(latency, 250)}ms`;
+          };
+          nextImg.src = getStreamUrl();
         };
         fetchSnap();
         const interval = Math.max(100, Math.round(1000 / streamFps));
@@ -1031,12 +1159,14 @@
     }
 
     function deactivateLiveStream() {
-      if (snapshotTimer) {
-        clearInterval(snapshotTimer);
-        snapshotTimer = null;
-      }
+      isStreamActive = false;
+      cleanupStream();
       const img = document.getElementById('main-video-img');
-      img.src = '';
+      if (img) {
+        img.onload = null;
+        img.onerror = null;
+        img.src = '';
+      }
     }
 
     function takeLiveSnapshot() {
@@ -1045,7 +1175,7 @@
       a.href = snapUrl;
       a.download = `screenshot_${streamInstance}_${Date.now()}.jpg`;
       a.click();
-      showToast('📸 实时设备截屏已成功保存！');
+      showToast('实时设备截屏已成功保存');
     }
     window.takeLiveSnapshot = takeLiveSnapshot;
 
@@ -1059,24 +1189,62 @@
     }
     window.toggleVideoFullscreen = toggleVideoFullscreen;
 
-    // Interactive Touch Feedback & Virtual Dispatch
+    // Interactive Touch Feedback & Virtual Dispatch with Aspect-Ratio Letterbox Compensation
     async function handleVideoClick(event) {
       const img = document.getElementById('main-video-img');
+      const clickArea = document.getElementById('video-click-area');
+      if (!img || !clickArea) return;
+
       const rect = img.getBoundingClientRect();
+      const areaRect = clickArea.getBoundingClientRect();
+
       const clickX = event.clientX - rect.left;
       const clickY = event.clientY - rect.top;
-      if (clickX < 0 || clickY < 0 || clickX > rect.width || clickY > rect.height) return;
 
-      // Scale to 1280x720 native coordinates
-      const scaledX = Math.round((clickX / rect.width) * 1280);
-      const scaledY = Math.round((clickY / rect.height) * 720);
+      // 1280x720 native game coordinate resolution
+      const NATIVE_W = 1280;
+      const NATIVE_H = 720;
+      const TARGET_ASPECT = NATIVE_W / NATIVE_H;
 
-      // Create Touch Ripple Effect
+      const boxWidth = rect.width;
+      const boxHeight = rect.height;
+      if (boxWidth <= 0 || boxHeight <= 0) return;
+
+      const boxAspect = boxWidth / boxHeight;
+      let renderedWidth = boxWidth;
+      let renderedHeight = boxHeight;
+      let offsetX = 0;
+      let offsetY = 0;
+
+      if (boxAspect > TARGET_ASPECT) {
+        // Pillarbox: container is wider than 16:9, black bars on left & right
+        renderedHeight = boxHeight;
+        renderedWidth = boxHeight * TARGET_ASPECT;
+        offsetX = (boxWidth - renderedWidth) / 2;
+      } else if (boxAspect < TARGET_ASPECT) {
+        // Letterbox: container is taller than 16:9, black bars on top & bottom
+        renderedWidth = boxWidth;
+        renderedHeight = boxWidth / TARGET_ASPECT;
+        offsetY = (boxHeight - renderedHeight) / 2;
+      }
+
+      const relX = clickX - offsetX;
+      const relY = clickY - offsetY;
+
+      // If clicked outside the rendered video rectangle (in letterbox padding), ignore
+      if (relX < 0 || relY < 0 || relX > renderedWidth || relY > renderedHeight) {
+        return;
+      }
+
+      const scaledX = Math.round(Math.max(0, Math.min(NATIVE_W, (relX / renderedWidth) * NATIVE_W)));
+      const scaledY = Math.round(Math.max(0, Math.min(NATIVE_H, (relY / renderedHeight) * NATIVE_H)));
+
+      // Visual touch ripple feedback placed accurately relative to click area
       const ripple = document.createElement('div');
       ripple.className = 'touch-ripple';
-      ripple.style.left = `${clickX}px`;
-      ripple.style.top = `${clickY}px`;
-      document.getElementById('video-click-area').appendChild(ripple);
+      ripple.style.left = `${event.clientX - areaRect.left}px`;
+      ripple.style.top = `${event.clientY - areaRect.top}px`;
+      clickArea.appendChild(ripple);
       setTimeout(() => ripple.remove(), 400);
 
       try {
@@ -1087,7 +1255,7 @@
           body: JSON.stringify({ action: 'tap', x: scaledX, y: scaledY })
         });
         if (res.ok) {
-          showToast(`👆 触屏点击已发送: (${scaledX}, ${scaledY})`);
+          showToast(`触屏点击指令已发送: (${scaledX}, ${scaledY})`);
         }
       } catch (err) {
         console.error("Action error:", err);
@@ -1104,7 +1272,7 @@
           body: JSON.stringify({ action: 'key', keycode: keycode })
         });
         if (res.ok) {
-          showToast(`⌨️ 虚拟按键 Keycode: ${keycode} 执行完成`);
+          showToast(`虚拟按键 Keycode: ${keycode} 执行完成`);
         }
       } catch (err) {
         showToast('按键发送失败', true);
@@ -1127,7 +1295,7 @@
           body: JSON.stringify({ action: 'swipe', x: x1, y: y1, x2: x2, y2: y2 })
         });
         if (res.ok) {
-          showToast(`👉 拟人化手势滑动已发送 (${dir})`);
+          showToast(`拟人化手势滑动已发送 (${dir})`);
         }
       } catch (err) {
         showToast('滑动失败', true);
@@ -1141,19 +1309,25 @@
       try {
         const res = await fetch('/api/v1/cluster/instances');
         const instances = await res.json();
-        container.innerHTML = instances.map(inst => `
+        container.innerHTML = instances.map(inst => {
+          const safeId = escapeHtml(inst.instance_id);
+          const safeName = escapeHtml(inst.name);
+          const safeStatus = escapeHtml((inst.status || 'idle').toUpperCase());
+          const safePipe = escapeHtml(inst.pipeline_name || 'idle');
+          const isBusy = inst.status === 'busy';
+          return `
           <div class="matrix-card">
             <div class="matrix-card-head">
-              <span style="font-weight:700; color:#fff;">${inst.instance_id} (${inst.name})</span>
-              <span class="badge ${inst.status === 'busy' ? 'badge-green' : 'badge-slate'}">${inst.status.toUpperCase()}</span>
+              <span style="font-weight:700; color:#fff;">${safeId} (${safeName})</span>
+              <span class="badge ${isBusy ? 'badge-green' : 'badge-slate'}">${safeStatus}</span>
             </div>
-            <img class="matrix-screen" src="/api/v1/cluster/instances/${inst.instance_id}/screenshot?t=${Date.now()}" alt="${inst.instance_id}" onclick="focusInstanceCinema('${inst.instance_id}')" />
+            <img class="matrix-screen" src="/api/v1/cluster/instances/${encodeURIComponent(inst.instance_id)}/screenshot?t=${Date.now()}" alt="${safeId}" onclick="focusInstanceCinema('${safeId}')" />
             <div class="matrix-card-foot">
-              <span>流水线: <strong>${inst.pipeline_name || 'idle'}</strong></span>
-              <button class="primary" style="padding:3px 8px; font-size:0.75rem;" onclick="focusInstanceCinema('${inst.instance_id}')">进入特写</button>
+              <span>流水线: <strong>${safePipe}</strong></span>
+              <button class="primary" style="padding:3px 8px; font-size:0.75rem;" onclick="focusInstanceCinema('${safeId}')">进入特写</button>
             </div>
           </div>
-        `).join('');
+        `}).join('');
       } catch (e) {
         console.error(e);
       }
@@ -1166,18 +1340,26 @@
     }
     window.focusInstanceCinema = focusInstanceCinema;
 
-    // Core Data Refreshers
+    // Core Data Refreshers with Concurrency Guard & AllSettled Isolation
     async function refreshAll() {
-      await Promise.all([
-        refreshClusterStatus(),
-        refreshInstances(),
-        refreshTeams(),
-        refreshProxies(),
-        refreshAccounts(),
-        refreshSoakStatus()
-      ]);
-      if (currentTab === 'stream' && viewMode === 'matrix') {
-        renderMatrixScreens();
+      if (isRefreshing) return;
+      isRefreshing = true;
+      try {
+        await Promise.allSettled([
+          refreshClusterStatus(),
+          refreshInstances(),
+          refreshTeams(),
+          refreshProxies(),
+          refreshAccounts(),
+          refreshSoakStatus()
+        ]);
+        if (currentTab === 'stream' && viewMode === 'matrix') {
+          await renderMatrixScreens();
+        }
+      } catch (err) {
+        console.error("Refresh all error:", err);
+      } finally {
+        isRefreshing = false;
       }
     }
     window.refreshAll = refreshAll;
@@ -1228,45 +1410,58 @@
         document.getElementById('tab-cnt-inst').innerText = instances.length;
 
         const listEl = document.getElementById('instances-list');
-        listEl.innerHTML = instances.map(inst => `
+        listEl.innerHTML = instances.map(inst => {
+          const safeId = escapeHtml(inst.instance_id);
+          const safeName = escapeHtml(inst.name);
+          const safeAcc = escapeHtml(inst.assigned_account_id || '未绑定');
+          const safeProxy = escapeHtml(inst.assigned_proxy_id || '直接直连');
+          const safePipe = escapeHtml(inst.pipeline_name || '无任务');
+          const safeTeam = inst.team_id ? `${escapeHtml(inst.team_id)} (${escapeHtml(inst.team_role || 'member')})` : '独立单开';
+          const isBusy = inst.status === 'busy';
+          const isIdle = inst.status === 'idle';
+          const dotColor = isBusy ? 'var(--emerald)' : (isIdle ? 'var(--cyan)' : 'var(--rose)');
+          const badgeClass = isBusy ? 'badge-green' : (isIdle ? 'badge-cyan' : 'badge-red');
+          return `
           <div class="instance-card">
             <div class="inst-head">
               <div style="display:flex; align-items:center; gap:8px;">
-                <span class="pulse-dot" style="background:${inst.status === 'busy' ? 'var(--emerald)' : (inst.status === 'idle' ? 'var(--cyan)' : 'var(--rose)')};"></span>
-                <span class="inst-id">${inst.instance_id}</span>
-                <span style="font-size:0.8rem; color:var(--text-muted);">(${inst.name})</span>
+                <span class="pulse-dot" style="background:${dotColor};"></span>
+                <span class="inst-id">${safeId}</span>
+                <span style="font-size:0.8rem; color:var(--text-muted);">(${safeName})</span>
               </div>
-              <span class="badge ${inst.status === 'busy' ? 'badge-green' : (inst.status === 'idle' ? 'badge-cyan' : 'badge-red')}">${inst.status.toUpperCase()}</span>
+              <span class="badge ${badgeClass}">${escapeHtml((inst.status || 'unknown').toUpperCase())}</span>
             </div>
 
             <div class="inst-details">
               <div class="inst-detail-item">
                 <span class="inst-label">绑定账号</span>
-                <span class="inst-val" style="color:var(--amber);">${inst.assigned_account_id || '未绑定'}</span>
+                <span class="inst-val" style="color:var(--amber);">${safeAcc}</span>
               </div>
               <div class="inst-detail-item">
                 <span class="inst-label">分配代理</span>
-                <span class="inst-val" style="color:var(--cyan);">${inst.assigned_proxy_id || '直接直连'}</span>
+                <span class="inst-val" style="color:var(--cyan);">${safeProxy}</span>
               </div>
               <div class="inst-detail-item">
                 <span class="inst-label">运行流水线</span>
-                <span class="inst-val">${inst.pipeline_name || '无任务'}</span>
+                <span class="inst-val">${safePipe}</span>
               </div>
               <div class="inst-detail-item">
                 <span class="inst-label">组队编制</span>
-                <span class="inst-val">${inst.team_id ? `${inst.team_id} (${inst.team_role})` : '独立单开'}</span>
+                <span class="inst-val">${safeTeam}</span>
               </div>
             </div>
 
             <div class="inst-actions">
-              <button class="primary" style="flex:1;" onclick="focusInstanceCinema('${inst.instance_id}')">📺 监控画面</button>
-              ${inst.status === 'busy' ?
-                `<button class="danger" onclick="stopInstance('${inst.instance_id}')">⏹ 停止</button>` :
-                `<button onclick="openLaunchModalForInst('${inst.instance_id}')">▶ 启动</button>`
+              <button class="primary" style="flex:1;" onclick="focusInstanceCinema('${safeId}')">
+                <span style="display:inline-flex; align-items:center; gap:4px;">${window.uiIcon ? window.uiIcon('video', { size:14 }) : ''} 监控画面</span>
+              </button>
+              ${isBusy ?
+                `<button class="danger" onclick="stopInstance('${safeId}')"><span style="display:inline-flex; align-items:center; gap:4px;">${window.uiIcon ? window.uiIcon('square', { size:14 }) : ''} 停止</span></button>` :
+                `<button onclick="openLaunchModalForInst('${safeId}')"><span style="display:inline-flex; align-items:center; gap:4px;">${window.uiIcon ? window.uiIcon('play', { size:14 }) : ''} 启动</span></button>`
               }
             </div>
           </div>
-        `).join('');
+        `}).join('');
       } catch (err) {
         console.error(err);
       }
@@ -1278,20 +1473,26 @@
         const data = await res.json();
         document.getElementById('tab-cnt-teams').innerText = data.total;
         const body = document.getElementById('teams-table-body');
-        if (data.teams.length === 0) {
+        if (!data.teams || data.teams.length === 0) {
           body.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:20px;">暂无组建队伍</td></tr>`;
           return;
         }
-        body.innerHTML = data.teams.map(t => `
+        body.innerHTML = data.teams.map(t => {
+          const safeTeamId = escapeHtml(t.team_id);
+          const safeLeader = escapeHtml(t.leader_id);
+          const membersHtml = (t.member_ids || []).map(m => `<span class="badge badge-cyan" style="margin-right:4px;">${escapeHtml(m)}</span>`).join('');
+          const safeActivity = escapeHtml(t.target_activity);
+          const count = (t.member_ids || []).length + 1;
+          return `
           <tr>
-            <td style="font-weight:700; color:#fff;">${t.team_id}</td>
-            <td><span class="badge badge-amber">Leader: ${t.leader_id}</span></td>
-            <td>${t.member_ids.map(m => `<span class="badge badge-cyan" style="margin-right:4px;">${m}</span>`).join('')}</td>
-            <td>${t.target_activity}</td>
-            <td><span class="badge badge-green">${t.member_ids.length + 1} / 5 人满编</span></td>
-            <td><button class="danger" onclick="dissolveTeam('${t.team_id}')">解散队伍</button></td>
+            <td style="font-weight:700; color:#fff;">${safeTeamId}</td>
+            <td><span class="badge badge-amber">Leader: ${safeLeader}</span></td>
+            <td>${membersHtml}</td>
+            <td>${safeActivity}</td>
+            <td><span class="badge badge-green">${count} / 5 人满编</span></td>
+            <td><button class="danger" onclick="dissolveTeam('${safeTeamId}')">解散队伍</button></td>
           </tr>
-        `).join('');
+        `}).join('');
       } catch (err) {
         console.error(err);
       }
@@ -1303,22 +1504,35 @@
         const data = await res.json();
         document.getElementById('tab-cnt-proxies').innerText = data.total;
         const body = document.getElementById('proxies-table-body');
-        body.innerHTML = data.proxies.map(p => `
+        if (!data.proxies || data.proxies.length === 0) {
+          body.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:20px;">暂无代理节点</td></tr>`;
+          return;
+        }
+        body.innerHTML = data.proxies.map(p => {
+          const safeProxyId = escapeHtml(p.proxy_id);
+          const safeHost = escapeHtml(p.host);
+          const safePort = escapeHtml(p.port);
+          const safeProto = escapeHtml((p.protocol || 'http').toUpperCase());
+          const boundCount = Number(p.bound_count) || 0;
+          const maxInst = Number(p.max_instances) || 5;
+          const pct = Math.min(100, Math.round((boundCount / maxInst) * 100));
+          const boundInsts = (p.bound_instances || []).map(escapeHtml).join(', ') || '无';
+          return `
           <tr>
-            <td style="font-weight:700; color:#fff;">${p.proxy_id}</td>
-            <td>${p.host}:${p.port}</td>
-            <td><span class="badge badge-slate">${p.protocol.toUpperCase()}</span></td>
+            <td style="font-weight:700; color:#fff;">${safeProxyId} ${p.label ? `<span style="font-size:0.75rem; color:var(--cyan); margin-left:4px;">${escapeHtml(p.label)}</span>` : ''}</td>
+            <td>${safeHost}:${safePort} ${p.location ? `<div style="font-size:0.72rem; color:var(--text-muted);">${escapeHtml(p.location)}</div>` : ''}</td>
+            <td><span class="badge badge-slate">${safeProto}</span></td>
             <td>
               <div style="display:flex; justify-content:space-between; font-size:0.75rem;">
-                <span>${p.bound_count} / ${p.max_instances}</span>
-                <span style="color:var(--emerald);">${Math.round((p.bound_count/p.max_instances)*100)}%</span>
+                <span>${boundCount} / ${maxInst}</span>
+                <span style="color:var(--emerald);">${pct}%</span>
               </div>
-              <div class="bar-container"><div class="bar-fill" style="width:${(p.bound_count/p.max_instances)*100}%;"></div></div>
+              <div class="bar-container"><div class="bar-fill" style="width:${pct}%;"></div></div>
             </td>
-            <td>${p.bound_instances.join(', ') || '无'}</td>
-            <td><button class="danger" onclick="deleteProxy('${p.proxy_id}')">注销</button></td>
+            <td>${boundInsts}</td>
+            <td><button class="danger" onclick="deleteProxy('${safeProxyId}')">注销</button></td>
           </tr>
-        `).join('');
+        `}).join('');
       } catch (err) {
         console.error(err);
       }
@@ -1330,20 +1544,34 @@
         const data = await res.json();
         document.getElementById('tab-cnt-accounts').innerText = data.total;
         const body = document.getElementById('accounts-table-body');
-        body.innerHTML = data.accounts.map(acc => `
+        if (!data.accounts || data.accounts.length === 0) {
+          body.innerHTML = `<tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:20px;">暂无账号数据</td></tr>`;
+          return;
+        }
+        body.innerHTML = data.accounts.map(acc => {
+          const safeAccId = escapeHtml(acc.account_id);
+          const safeName = escapeHtml(acc.role_name || acc.username || acc.account_id);
+          const safeSect = escapeHtml(acc.sect || '未拜门派');
+          const safeServer = escapeHtml(acc.server_name || '双线区');
+          const onlineMins = Math.round(Number(acc.consecutive_online_minutes) || 0);
+          const fatigueMins = Math.round(Number(acc.fatigue_threshold_minutes) || 360);
+          const isOnline = acc.status === 'online';
+          const goldStr = Number(acc.gold || 0).toLocaleString();
+          const silverStr = Number(acc.silver || 0).toLocaleString();
+          return `
           <tr>
-            <td style="font-weight:700; color:#fff;">${acc.account_id}</td>
-            <td>${acc.role_name || acc.username} (${acc.sect})</td>
-            <td>${acc.server_name}</td>
-            <td>${Math.round(acc.consecutive_online_minutes)}m / ${acc.fatigue_threshold_minutes}m</td>
-            <td><span class="badge ${acc.status === 'online' ? 'badge-green' : 'badge-slate'}">${acc.status}</span></td>
-            <td style="color:var(--amber); font-weight:600;">${acc.gold.toLocaleString()}</td>
-            <td style="color:#cbd5e1;">${acc.silver.toLocaleString()}</td>
+            <td style="font-weight:700; color:#fff;">${safeAccId}</td>
+            <td>${safeName} (${safeSect})</td>
+            <td>${safeServer}</td>
+            <td>${onlineMins}m / ${fatigueMins}m</td>
+            <td><span class="badge ${isOnline ? 'badge-green' : 'badge-slate'}">${isOnline ? 'ONLINE' : 'RESTING'}</span></td>
+            <td style="color:var(--amber); font-weight:600;">${goldStr}</td>
+            <td style="color:#cbd5e1;">${silverStr}</td>
             <td>
-              ${acc.status === 'online' ? `<button onclick="forceRestAccount('${acc.account_id}')">强制休眠</button>` : `<span style="color:var(--text-muted); font-size:0.8rem;">休息中</span>`}
+              ${isOnline ? `<button onclick="forceRestAccount('${safeAccId}')">强制休眠</button>` : `<span style="color:var(--text-muted); font-size:0.8rem;">作息中</span>`}
             </td>
           </tr>
-        `).join('');
+        `}).join('');
       } catch (err) {
         console.error(err);
       }
@@ -1353,18 +1581,19 @@
       try {
         const res = await fetch('/api/v1/soak/status');
         const d = await res.json();
+        isSoakRunning = Boolean(d.is_running);
         const badge = document.getElementById('soak-status-badge');
         const toggleBtn = document.getElementById('btn-soak-toggle');
         if (d.is_running) {
           badge.className = 'badge badge-green';
-          badge.innerText = '🟢 RUNNING';
+          badge.innerHTML = `<span style="display:inline-flex; align-items:center; gap:4px;"><span class="pulse-dot"></span> RUNNING</span>`;
           toggleBtn.className = 'danger';
-          toggleBtn.innerText = '⏹ 停止 24h 压测';
+          toggleBtn.innerHTML = `<span style="display:inline-flex; align-items:center; gap:4px;">${window.uiIcon ? window.uiIcon('square', { size:14 }) : ''} 停止 24h 压测</span>`;
         } else {
           badge.className = 'badge badge-slate';
-          badge.innerText = '⚪ IDLE';
+          badge.innerText = 'IDLE';
           toggleBtn.className = 'primary';
-          toggleBtn.innerText = '▶ 启动 24h 压测';
+          toggleBtn.innerHTML = `<span style="display:inline-flex; align-items:center; gap:4px;">${window.uiIcon ? window.uiIcon('play', { size:14 }) : ''} 启动 24h 压测</span>`;
         }
         const h = Math.floor(d.elapsed_sec / 3600);
         const m = Math.floor((d.elapsed_sec % 3600) / 60);
@@ -1385,19 +1614,27 @@
         const tRes = await fetch('/api/v1/soak/telemetry?limit=20');
         const tData = await tRes.json();
         const tBody = document.getElementById('soak-telemetry-body');
-        if (tData.samples.length > 0) {
-          tBody.innerHTML = tData.samples.slice(-20).reverse().map(s => `
+        if (tData.samples && tData.samples.length > 0) {
+          tBody.innerHTML = tData.samples.slice(-20).reverse().map(s => {
+            const timeStr = s.timestamp ? escapeHtml(s.timestamp.split('T')[1]?.split('.')[0] || '--') : '--';
+            const elapsed = Number(s.elapsed_sec) || 0;
+            const rss = Number(s.rss_mb) || 0;
+            const instCount = Number(s.active_instances) || 0;
+            const ops = Number(s.completed_ops) || 0;
+            const faults = Number(s.faults_recovered) || 0;
+            const deadlocks = Number(s.deadlocks_detected) || 0;
+            return `
             <tr>
-              <td>${s.timestamp ? s.timestamp.split('T')[1]?.split('.')[0] : '--'}</td>
-              <td>${s.elapsed_sec}s</td>
-              <td style="font-weight:600; color:#fff;">${s.rss_mb} MB</td>
-              <td><span class="badge badge-cyan">${s.active_instances} 台</span></td>
-              <td>${s.completed_ops}</td>
-              <td><span class="badge badge-green">${s.faults_recovered}</span></td>
-              <td>${s.deadlocks_detected}</td>
-              <td><span style="color:var(--emerald);">● 平稳无泄漏</span></td>
+              <td>${timeStr}</td>
+              <td>${elapsed}s</td>
+              <td style="font-weight:600; color:#fff;">${rss} MB</td>
+              <td><span class="badge badge-cyan">${instCount} 台</span></td>
+              <td>${ops}</td>
+              <td><span class="badge badge-green">${faults}</span></td>
+              <td>${deadlocks}</td>
+              <td><span style="color:var(--emerald); display:inline-flex; align-items:center; gap:4px;">${window.uiIcon ? window.uiIcon('check-circle', { size:13 }) : ''} 平稳无泄漏</span></td>
             </tr>
-          `).join('');
+          `}).join('');
         }
       } catch (err) {
         console.error("Soak status error:", err);
@@ -1406,12 +1643,11 @@
 
     // Interactive Action Handlers
     async function toggleSoakTest() {
-      const isRunning = document.getElementById('soak-status-badge').innerText.includes('RUNNING');
-      const url = isRunning ? '/api/v1/soak/stop' : '/api/v1/soak/start';
+      const url = isSoakRunning ? '/api/v1/soak/stop' : '/api/v1/soak/start';
       try {
         const res = await fetch(url, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({}) });
         const d = await res.json();
-        showToast(isRunning ? '⏹ 压测已优雅停止' : `▶ 压测已在后台拉起 (PID: ${d.pid})`);
+        showToast(isSoakRunning ? '压测已停止' : `压测已在后台拉起 (PID: ${d.pid})`);
         setTimeout(refreshSoakStatus, 1000);
       } catch (err) {
         showToast('压测启停失败', true);
@@ -1421,7 +1657,7 @@
 
     async function forceRestAccount(accId) {
       try {
-        const res = await fetch(`/api/v1/cluster/accounts/${accId}/rest`, { method: 'POST' });
+        const res = await fetch(`/api/v1/cluster/accounts/${encodeURIComponent(accId)}/rest`, { method: 'POST' });
         if (res.ok) {
           showToast(`账号 ${accId} 已进入疲劳休眠作息`);
           refreshAccounts();
@@ -1434,7 +1670,7 @@
 
     async function stopInstance(instId) {
       try {
-        const res = await fetch(`/api/v1/cluster/instances/${instId}/stop`, { method: 'POST' });
+        const res = await fetch(`/api/v1/cluster/instances/${encodeURIComponent(instId)}/stop`, { method: 'POST' });
         if (res.ok) {
           showToast(`实例 ${instId} 任务已停止`);
           refreshInstances();
@@ -1448,7 +1684,7 @@
     async function dissolveTeam(teamId) {
       if (!confirm(`确认解散队伍 ${teamId} 吗？`)) return;
       try {
-        const res = await fetch(`/api/v1/cluster/teams/${teamId}`, { method: 'DELETE' });
+        const res = await fetch(`/api/v1/cluster/teams/${encodeURIComponent(teamId)}`, { method: 'DELETE' });
         if (res.ok) {
           showToast(`队伍 ${teamId} 已解散`);
           refreshTeams();
@@ -1462,7 +1698,7 @@
     async function deleteProxy(proxyId) {
       if (!confirm(`确认注销代理 ${proxyId} 吗？`)) return;
       try {
-        const res = await fetch(`/api/v1/cluster/proxies/${proxyId}`, { method: 'DELETE' });
+        const res = await fetch(`/api/v1/cluster/proxies/${encodeURIComponent(proxyId)}`, { method: 'DELETE' });
         if (res.ok) {
           showToast(`代理 ${proxyId} 已注销`);
           refreshProxies();
@@ -1480,7 +1716,7 @@
     window.openRegisterInstanceModal = openRegisterInstanceModal;
     function openCreateTeamModal() {
       fetch('/api/v1/cluster/instances').then(r => r.json()).then(insts => {
-        document.getElementById('reg-team-leader').innerHTML = insts.map(i => `<option value="${i.instance_id}">${i.instance_id} (${i.name})</option>`).join('');
+        document.getElementById('reg-team-leader').innerHTML = insts.map(i => `<option value="${escapeHtml(i.instance_id)}">${escapeHtml(i.instance_id)} (${escapeHtml(i.name)})</option>`).join('');
       });
       document.getElementById('create-team-modal').classList.add('active');
     }
@@ -1491,6 +1727,21 @@
     window.openRegisterAccountModal = openRegisterAccountModal;
     function triggerApiStressModal() { document.getElementById('api-stress-modal').classList.add('active'); }
     window.triggerApiStressModal = triggerApiStressModal;
+
+    function openLaunchModalForInst(instId) {
+      switchTab('agent');
+      const targetType = document.getElementById('launch-target-type');
+      if (targetType) {
+        targetType.value = 'instance_single';
+        handleTargetTypeChange();
+      }
+      const instSelect = document.getElementById('launch-instance-id');
+      if (instSelect) {
+        instSelect.value = instId;
+      }
+      showToast(`已就绪下发实例 ${instId} 专属任务`);
+    }
+    window.openLaunchModalForInst = openLaunchModalForInst;
 
     async function submitRegisterInstance() {
       const id = document.getElementById('reg-inst-id').value.trim();
@@ -1564,7 +1815,7 @@
       const r = parseInt(document.getElementById('stress-requests').value, 10) || 200;
       const mode = document.getElementById('stress-mode').value;
       closeModal('api-stress-modal');
-      showToast('🔥 高并发 API 压力测试执行中，请稍候...');
+      showToast('高并发 API 压力测试执行中，请稍候...');
       try {
         const res = await fetch('/api/v1/stress/run', {
           method: 'POST',
@@ -1575,7 +1826,7 @@
         document.getElementById('soak-qps-val').innerHTML = `${d.qps.toFixed(1)} <span style="font-size:0.9rem; font-weight:normal; color:var(--text-muted);">QPS</span>`;
         document.getElementById('soak-p95-val').innerText = `${d.overall_p95_ms.toFixed(2)} ms`;
         document.getElementById('soak-success-val').innerText = `${((d.total_success/d.total_requests)*100).toFixed(1)}%`;
-        showToast(`✅ 打压评测完成！实测 QPS: ${d.qps.toFixed(1)}, P95: ${d.overall_p95_ms.toFixed(2)}ms`);
+        showToast(`打压评测完成！实测 QPS: ${d.qps.toFixed(1)}, P95: ${d.overall_p95_ms.toFixed(2)}ms`);
       } catch (err) {
         showToast('打压评测失败', true);
       }
@@ -1588,8 +1839,8 @@
         const res = await fetch('/api/v1/plugins');
         const data = await res.json();
         const pSel = document.getElementById('launch-plugin');
-        pSel.innerHTML = data.plugins.map(p => `<option value="${p.id}">${p.name} (${p.id})</option>`).join('');
-        handlePluginChange();
+        pSel.innerHTML = (data.plugins || []).map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)} (${escapeHtml(p.id)})</option>`).join('');
+        await handlePluginChange();
       } catch (e) {
         console.error(e);
       }
@@ -1597,11 +1848,12 @@
 
     async function handlePluginChange() {
       const pId = document.getElementById('launch-plugin').value;
+      if (!pId) return;
       try {
-        const res = await fetch(`/api/v1/plugins/${pId}/pipelines`);
+        const res = await fetch(`/api/v1/plugins/${encodeURIComponent(pId)}/pipelines`);
         const data = await res.json();
         const pipeSel = document.getElementById('launch-pipeline');
-        pipeSel.innerHTML = data.pipelines.map(p => `<option value="${p.name}">${p.description || p.name}</option>`).join('');
+        pipeSel.innerHTML = (data.pipelines || []).map(p => `<option value="${escapeHtml(p.name)}">${escapeHtml(p.description || p.name)}</option>`).join('');
       } catch (e) {
         console.error(e);
       }
@@ -1657,7 +1909,7 @@
       } else if (targetType === 'instance_single') {
         const instId = document.getElementById('launch-instance-id').value;
         const pipeline = document.getElementById('launch-pipeline').value;
-        const res = await fetch(`/api/v1/cluster/instances/${instId}/start`, {
+        const res = await fetch(`/api/v1/cluster/instances/${encodeURIComponent(instId)}/start`, {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({ plugin: plugin, pipeline: pipeline, variables: vars })
@@ -1702,6 +1954,20 @@
       autoRefreshTimer = setInterval(refreshAll, 3000);
     }
 
+    // Modal Accessibility & Keyboard Dismissal
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        document.querySelectorAll('.modal-overlay.active').forEach(m => m.classList.remove('active'));
+      }
+    });
+    document.querySelectorAll('.modal-overlay').forEach(overlay => {
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+          overlay.classList.remove('active');
+        }
+      });
+    });
+
     // Startup
     window.addEventListener('DOMContentLoaded', () => {
       refreshAll();
@@ -1709,7 +1975,7 @@
       setupAutoRefresh();
       // Populate instance selection dropdowns
       fetch('/api/v1/cluster/instances').then(r => r.json()).then(insts => {
-        const optHtml = insts.map(i => `<option value="${i.instance_id}">${i.instance_id} (${i.name})</option>`).join('');
+        const optHtml = insts.map(i => `<option value="${escapeHtml(i.instance_id)}">${escapeHtml(i.instance_id)} (${escapeHtml(i.name)})</option>`).join('');
         document.getElementById('launch-instance-id').innerHTML = optHtml;
       });
     });

@@ -1,0 +1,72 @@
+{
+  "log": {
+    "level": "info",
+    "timestamp": true
+  },
+  "inbounds": [
+    {
+      "type": "mixed",
+      "tag": "mixed-sh-01",
+      "listen": "127.0.0.1",
+      "listen_port": 10801
+    },
+    {
+      "type": "mixed",
+      "tag": "mixed-sh-02",
+      "listen": "127.0.0.1",
+      "listen_port": 10802
+    },
+    {
+      "type": "mixed",
+      "tag": "mixed-sh-03",
+      "listen": "127.0.0.1",
+      "listen_port": 10803
+    },
+    {
+      "type": "mixed",
+      "tag": "mixed-sh-04",
+      "listen": "127.0.0.1",
+      "listen_port": 10804
+    },
+    {
+      "type": "mixed",
+      "tag": "mixed-sh-05",
+      "listen": "127.0.0.1",
+      "listen_port": 10805
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "vless",
+      "tag": "home-win-out",
+      "server": "home-node.mangoqwq.com",
+      "server_port": 443,
+      "uuid": "ee224693-03a8-4207-b9aa-7d1be97b23dd",
+      "tls": {
+        "enabled": true,
+        "server_name": "home-node.mangoqwq.com"
+      },
+      "transport": {
+        "type": "ws",
+        "path": "/ws-PZQA0pnS52HR6IbX",
+        "headers": {
+          "Host": "home-node.mangoqwq.com"
+        }
+      }
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "inbound": [
+          "mixed-sh-01",
+          "mixed-sh-02",
+          "mixed-sh-03",
+          "mixed-sh-04",
+          "mixed-sh-05"
+        ],
+        "outbound": "home-win-out"
+      }
+    ]
+  }
+}

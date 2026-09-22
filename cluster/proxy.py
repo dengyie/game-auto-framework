@@ -49,6 +49,8 @@ class ProxyConfig(BaseModel):
     last_checked_at: float = 0.0
     latency_ms: float = 0.0
     error_message: Optional[str] = None
+    label: Optional[str] = None
+    location: Optional[str] = None
 
     @property
     def url(self) -> str:
@@ -78,6 +80,8 @@ class ProxyConfig(BaseModel):
             "status": self.status.value,
             "latency_ms": round(self.latency_ms, 2),
             "error_message": self.error_message,
+            "label": self.label,
+            "location": self.location,
         }
 
 
@@ -108,6 +112,8 @@ class ProxyManager:
         username: Optional[str] = None,
         password: Optional[str] = None,
         max_instances: int = 5,
+        label: Optional[str] = None,
+        location: Optional[str] = None,
     ) -> ProxyConfig:
         """Register a new proxy endpoint into the pool."""
         with self._lock:
@@ -122,6 +128,8 @@ class ProxyManager:
                 username=username,
                 password=password,
                 max_instances=max_inst,
+                label=label,
+                location=location,
             )
             self._proxies[proxy_id] = config
             logger.info(

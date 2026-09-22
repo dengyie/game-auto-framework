@@ -442,15 +442,17 @@ def init_default_cluster(config_path: Optional[str] = None) -> None:
     # 2. Register Proxies if pool is empty
     if PROXY_MANAGER.get_pool_status()["total_proxies"] == 0:
         proxies = [
-            ("proxy_dgn_01", "socks5", "45.202.199.205", 44381),
-            ("proxy_hk_01", "socks5", "104.208.65.233", 56667),
-            ("proxy_in_01", "socks5", "20.198.2.112", 56667),
-            ("proxy_us_01", "socks5", "35.212.179.13", 44302),
-            ("proxy_sh_01", "socks5", "192.168.1.5", 7897),
+            ("proxy_sh_01", "socks5", "127.0.0.1", 10801, "上海家宽-01 (home-win)", "中国·上海 (移动住宅家宽-通道1)"),
+            ("proxy_sh_02", "socks5", "127.0.0.1", 10802, "上海家宽-02 (home-win)", "中国·上海 (移动住宅家宽-通道2)"),
+            ("proxy_sh_03", "socks5", "127.0.0.1", 10803, "上海家宽-03 (home-win)", "中国·上海 (移动住宅家宽-通道3)"),
+            ("proxy_sh_04", "socks5", "127.0.0.1", 10804, "上海家宽-04 (home-win)", "中国·上海 (移动住宅家宽-通道4)"),
+            ("proxy_sh_05", "socks5", "127.0.0.1", 10805, "上海家宽-05 (home-win)", "中国·上海 (移动住宅家宽-通道5)"),
         ]
-        for p_id, proto, host, port in proxies:
-            PROXY_MANAGER.register_proxy(p_id, host=host, port=port, protocol=proto, max_instances=5)
-        logger.info(f"Registered {len(proxies)} default proxies in PROXY_MANAGER")
+        for p_id, proto, host, port, lbl, loc in proxies:
+            PROXY_MANAGER.register_proxy(
+                p_id, host=host, port=port, protocol=proto, max_instances=1, label=lbl, location=loc
+            )
+        logger.info(f"Registered {len(proxies)} Shanghai residential proxies in PROXY_MANAGER")
 
     # 3. Register Instances & Bind Accounts
     accounts = ACCOUNT_MATRIX.list_accounts()
@@ -470,12 +472,19 @@ def init_default_cluster(config_path: Optional[str] = None) -> None:
             inst.status = InstanceStatus.IDLE
             inst.heartbeat()
 
-            # Bind proxy
-            avail = PROXY_MANAGER.get_available_proxy()
-            if avail:
-                PROXY_MANAGER.bind_instance_to_proxy(inst_id, avail.proxy_id)
-                inst.assigned_proxy_id = avail.proxy_id
-                acc.start_session(inst_id, avail.proxy_id)
+            # Bind proxy: prefer account's preset proxy or claim next available residential proxy
+            target_proxy = None
+            if acc.bound_proxy_id:
+                p = PROXY_MANAGER.get_proxy(acc.bound_proxy_id)
+                if p and p.is_available:
+                    target_proxy = p
+            if not target_proxy:
+                target_proxy = PROXY_MANAGER.get_available_proxy()
+
+            if target_proxy:
+                PROXY_MANAGER.bind_instance_to_proxy(inst_id, target_proxy.proxy_id)
+                inst.assigned_proxy_id = target_proxy.proxy_id
+                acc.start_session(inst_id, target_proxy.proxy_id)
             else:
                 acc.start_session(inst_id)
 
@@ -543,6 +552,8 @@ class RegisterProxyRequest(BaseModel):
     username: Optional[str] = Field(default=None, description="Optional auth user")
     password: Optional[str] = Field(default=None, description="Optional auth password")
     max_instances: int = Field(default=5, description="Max instances per proxy (<=5)")
+    label: Optional[str] = Field(default=None, description="Descriptive label e.g. 上海家宽")
+    location: Optional[str] = Field(default=None, description="Location e.g. 中国·上海")
 
 
 class BindProxyRequest(BaseModel):
@@ -802,6 +813,8 @@ def register_proxy(req: RegisterProxyRequest) -> Dict[str, Any]:
         username=req.username,
         password=req.password,
         max_instances=req.max_instances,
+        label=req.label,
+        location=req.location,
     )
     return {"status": "registered", "proxy": p.to_dict()}
 
