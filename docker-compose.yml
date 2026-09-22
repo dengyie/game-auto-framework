@@ -1,0 +1,23 @@
+version: "3.8"
+
+services:
+  game-auto-framework:
+    build: .
+    container_name: game-auto-framework
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOGURU_LEVEL=INFO
+      - DEFAULT_DEVICE_TYPE=adb
+      - ADB_SERIAL=127.0.0.1:5555
+    volumes:
+      - ./plugins:/app/plugins
+      - ./logs:/app/logs
+      - ./config:/app/config
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

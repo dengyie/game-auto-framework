@@ -1,0 +1,28 @@
+# game-auto-framework Production Configuration Template
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+  api_key: ""  # Optional bearer token for VPS endpoint security
+
+device:
+  default_type: "adb"  # "adb", "virtual", "windows", "macos"
+  adb_serial: "127.0.0.1:5555"  # Remote Android emulator or Cloud Phone address
+  resolution: [1280, 720]
+  auto_reconnect: true
+
+scheduler:
+  stall_threshold_sec: 30.0
+  max_minor_escape_attempts: 3
+  enable_anti_bot_interrupt: true
+
+plugins:
+  default_plugin: "mhxy_mobile"
+  default_pipeline: "daily_shimen"
+
+notification:
+  bark_url: ""
+  telegram:
+    bot_token: ""
+    chat_id: ""
+  feishu_webhook: ""

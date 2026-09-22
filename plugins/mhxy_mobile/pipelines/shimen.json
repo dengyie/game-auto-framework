@@ -1,0 +1,81 @@
+{
+  "name": "daily_shimen",
+  "entry": "check_task_list",
+  "nodes": [
+    {
+      "name": "check_task_list",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "find_shimen_tracker"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "click_shimen_tracker"
+      },
+      "next": ["talk_to_master", "dialog_turnin", "buy_required_item"],
+      "timeout_sec": 20.0
+    },
+    {
+      "name": "talk_to_master",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "is_master_dialog_open"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "click_accept_shimen"
+      },
+      "next": ["check_task_list", "complete_round"],
+      "timeout_sec": 15.0
+    },
+    {
+      "name": "dialog_turnin",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "is_turnin_dialog_open"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "click_turnin_item"
+      },
+      "next": ["check_task_list", "complete_round"],
+      "timeout_sec": 15.0
+    },
+    {
+      "name": "buy_required_item",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "is_shop_dialog_open"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "click_buy_shop_item"
+      },
+      "next": ["check_task_list"],
+      "timeout_sec": 15.0
+    },
+    {
+      "name": "complete_round",
+      "recognition": {
+        "type": "always"
+      },
+      "action": {
+        "type": "none"
+      },
+      "is_terminal": true
+    },
+    {
+      "name": "intercept_anti_bot_popup",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "detect_anti_bot_popup"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "resolve_anti_bot_popup"
+      },
+      "is_interrupt": true,
+      "timeout_sec": 15.0
+    }
+  ]
+}

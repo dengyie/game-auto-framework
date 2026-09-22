@@ -1,0 +1,15 @@
+{
+  "id": "mhxy_mobile",
+  "name": "Fantasy Westward Journey Mobile Automation",
+  "version": "1.0.0",
+  "author": "game-auto-framework",
+  "description": "Comprehensive daily routines, gold farming, and anti-bot defense for Fantasy Westward Journey Mobile",
+  "resolution": {
+    "width": 1280,
+    "height": 720
+  },
+  "pipelines": [
+    "pipelines/shimen.json",
+    "pipelines/anti_bot.json"
+  ]
+}
