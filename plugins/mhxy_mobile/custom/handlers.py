@@ -347,5 +347,116 @@ def click_batch_sell(ctx: PipelineContext, act: NodeAction) -> None:
         cx2, cy2 = _get_coord_center(coords, "shanghui", "btn_confirm_sell", (640, 480, 90, 35))
         ctx.device.click(cx2, cy2)
     ctx.variables["has_unbound_items"] = False
+    ctx.variables["shanghui_cleared"] = True
+
+
+# ==============================================================================
+# 5. 新手起号与基础主线任务 (Basic & Novice Tasks) Handlers
+# ==============================================================================
+
+def click_enter_game_world(ctx: PipelineContext, act: NodeAction) -> None:
+    coords = ctx.variables.get("coordinates", {})
+    cx, cy = _get_coord_center(coords, "novice", "btn_enter_game", (640, 520, 160, 45))
+    if ctx.device:
+        ctx.device.click(cx, cy)
+    if ctx.variables.get("need_create_role", False):
+        ctx.variables["is_role_selection"] = True
+    else:
+        ctx.variables["in_world"] = True
+    logger.info("Executed click_enter_game_world; character entered game world.")
+
+
+def is_role_selection_screen(ctx: PipelineContext, frame: Any, rec: NodeRecognition) -> bool:
+    return ctx.variables.get("is_role_selection", False)
+
+
+def click_confirm_role_and_sect(ctx: PipelineContext, act: NodeAction) -> None:
+    coords = ctx.variables.get("coordinates", {})
+    cx, cy = _get_coord_center(coords, "novice", "btn_confirm_role", (980, 620, 120, 45))
+    if ctx.device:
+        ctx.device.click(cx, cy)
+    ctx.variables["is_role_selection"] = False
+    ctx.variables["role_created"] = True
+    ctx.variables["in_world"] = True
+    logger.info("Character role and sect creation confirmed.")
+
+
+def find_novice_quest_tracker(ctx: PipelineContext, frame: Any, rec: NodeRecognition) -> bool:
+    return ctx.variables.get("has_novice_quest", True)
+
+
+def click_novice_quest_tracker(ctx: PipelineContext, act: NodeAction) -> None:
+    coords = ctx.variables.get("coordinates", {})
+    cx, cy = _get_coord_center(coords, "novice", "btn_novice_track", (1120, 195, 120, 35))
+    if ctx.device:
+        ctx.device.click(cx, cy)
+    ctx.variables["novice_quest_active"] = True
+    ctx.variables["story_dialog_open"] = True
+
+
+def is_story_dialog_open(ctx: PipelineContext, frame: Any, rec: NodeRecognition) -> bool:
+    return ctx.variables.get("story_dialog_open", True)
+
+
+def click_skip_or_advance_dialog(ctx: PipelineContext, act: NodeAction) -> None:
+    coords = ctx.variables.get("coordinates", {})
+    cx, cy = _get_coord_center(coords, "novice", "btn_skip_dialog", (1180, 50, 60, 30))
+    if ctx.device:
+        ctx.device.click(cx, cy)
+        time.sleep(0.1)
+        cx2, cy2 = _get_coord_center(coords, "novice", "btn_dialog_next", (950, 480, 120, 40))
+        ctx.device.click(cx2, cy2)
+    ctx.variables["story_dialog_open"] = False
+    # Check if this dialogue leads to combat or directly to reward
+    if ctx.variables.get("leads_to_combat", True):
+        ctx.variables["novice_in_battle"] = True
+    else:
+        ctx.variables["novice_reward_ready"] = True
+
+
+def is_novice_battle_active(ctx: PipelineContext, frame: Any, rec: NodeRecognition) -> bool:
+    return ctx.variables.get("novice_in_battle", False)
+
+
+def handle_novice_combat_actions(ctx: PipelineContext, act: NodeAction) -> None:
+    coords = ctx.variables.get("coordinates", {})
+    cx, cy = _get_coord_center(coords, "battle", "btn_auto_battle", (1120, 620, 60, 40))
+    if ctx.device:
+        ctx.device.click(cx, cy)
+    ctx.variables["novice_battle_auto_engaged"] = True
+    ctx.variables["novice_in_battle"] = False
+    ctx.variables["novice_battle_ended"] = True
+    logger.info("Engaged auto-battle for novice story combat.")
+
+
+def is_novice_battle_ended(ctx: PipelineContext, frame: Any, rec: NodeRecognition) -> bool:
+    return ctx.variables.get("novice_battle_ended", True)
+
+
+def increment_novice_progress(ctx: PipelineContext, act: NodeAction) -> None:
+    ctx.variables["novice_step"] = ctx.variables.get("novice_step", 0) + 1
+    ctx.variables["novice_battle_ended"] = False
+    ctx.variables["novice_reward_ready"] = True
+    logger.info(f"Novice basic quest step progress: [{ctx.variables['novice_step']}/3]")
+
+
+def is_novice_reward_available(ctx: PipelineContext, frame: Any, rec: NodeRecognition) -> bool:
+    return ctx.variables.get("novice_reward_ready", True)
+
+
+def click_claim_novice_reward(ctx: PipelineContext, act: NodeAction) -> None:
+    coords = ctx.variables.get("coordinates", {})
+    cx, cy = _get_coord_center(coords, "novice", "btn_claim_reward", (640, 480, 100, 40))
+    if ctx.device:
+        ctx.device.click(cx, cy)
+    ctx.variables["novice_reward_ready"] = False
+    ctx.variables["level"] = ctx.variables.get("level", 1) + 5
+    logger.info(f"Claimed novice quest rewards. Character level up -> {ctx.variables['level']}")
+
+
+def finish_novice_tasks(ctx: PipelineContext, act: NodeAction) -> None:
+    ctx.variables["basic_tasks_completed"] = True
+    logger.info("Novice basic tasks pipeline successfully finished.")
+
     ctx.variables["shanghui_open"] = False
     ctx.variables["shanghui_cleared"] = True

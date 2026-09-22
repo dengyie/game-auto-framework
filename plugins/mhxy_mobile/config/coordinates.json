@@ -84,5 +84,13 @@
     "btn_shanghui_tab": [220, 120, 80, 35],
     "btn_batch_sell": [1020, 600, 110, 40],
     "btn_confirm_sell": [640, 480, 90, 35]
+  },
+  "novice": {
+    "btn_enter_game": [560, 580, 160, 50],
+    "btn_confirm_role": [980, 620, 120, 45],
+    "btn_novice_track": [1120, 195, 120, 35],
+    "btn_skip_dialog": [1180, 50, 60, 30],
+    "btn_dialog_next": [950, 480, 120, 40],
+    "btn_claim_reward": [640, 480, 100, 40]
   }
 }

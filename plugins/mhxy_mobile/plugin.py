@@ -115,6 +115,22 @@ class MHXYMobilePlugin(BaseGamePlugin):
         context.register_recognition("has_items_to_sell", h.has_items_to_sell)
         context.register_action("click_batch_sell", h.click_batch_sell)
 
+        # 10. Novice & Basic Story (basic_tasks) Handlers
+        context.register_action("click_enter_game_world", h.click_enter_game_world)
+        context.register_recognition("is_role_selection_screen", h.is_role_selection_screen)
+        context.register_action("click_confirm_role_and_sect", h.click_confirm_role_and_sect)
+        context.register_recognition("find_novice_quest_tracker", h.find_novice_quest_tracker)
+        context.register_action("click_novice_quest_tracker", h.click_novice_quest_tracker)
+        context.register_recognition("is_story_dialog_open", h.is_story_dialog_open)
+        context.register_action("click_skip_or_advance_dialog", h.click_skip_or_advance_dialog)
+        context.register_recognition("is_novice_battle_active", h.is_novice_battle_active)
+        context.register_action("handle_novice_combat_actions", h.handle_novice_combat_actions)
+        context.register_recognition("is_novice_battle_ended", h.is_novice_battle_ended)
+        context.register_action("increment_novice_progress", h.increment_novice_progress)
+        context.register_recognition("is_novice_reward_available", h.is_novice_reward_available)
+        context.register_action("click_claim_novice_reward", h.click_claim_novice_reward)
+        context.register_action("finish_novice_tasks", h.finish_novice_tasks)
+
     # --- Shimen Handlers ---
 
     def _find_shimen_tracker(self, ctx: PipelineContext, frame: Any, rec: NodeRecognition) -> bool:

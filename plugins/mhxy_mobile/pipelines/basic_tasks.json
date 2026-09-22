@@ -1,0 +1,127 @@
+{
+  "name": "basic_tasks",
+  "entry": "check_entry_screen",
+  "nodes": [
+    {
+      "name": "check_entry_screen",
+      "recognition": {
+        "type": "always"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "click_enter_game_world"
+      },
+      "branches": [
+        {
+          "condition": "variables.get('in_world', False)",
+          "next": "track_novice_quest"
+        }
+      ],
+      "next": ["create_or_select_role"],
+      "timeout_sec": 20.0
+    },
+    {
+      "name": "create_or_select_role",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "is_role_selection_screen"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "click_confirm_role_and_sect"
+      },
+      "next": ["track_novice_quest"],
+      "timeout_sec": 25.0
+    },
+    {
+      "name": "track_novice_quest",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "find_novice_quest_tracker"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "click_novice_quest_tracker"
+      },
+      "next": ["handle_story_dialog"],
+      "timeout_sec": 25.0
+    },
+    {
+      "name": "handle_story_dialog",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "is_story_dialog_open"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "click_skip_or_advance_dialog"
+      },
+      "branches": [
+        {
+          "condition": "variables.get('novice_in_battle', False)",
+          "next": "novice_combat"
+        }
+      ],
+      "next": ["novice_combat", "claim_novice_level_rewards"],
+      "timeout_sec": 20.0
+    },
+    {
+      "name": "novice_combat",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "is_novice_battle_active"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "handle_novice_combat_actions"
+      },
+      "next": ["wait_novice_combat_end"],
+      "timeout_sec": 30.0
+    },
+    {
+      "name": "wait_novice_combat_end",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "is_novice_battle_ended"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "increment_novice_progress"
+      },
+      "next": ["claim_novice_level_rewards"],
+      "timeout_sec": 25.0
+    },
+    {
+      "name": "claim_novice_level_rewards",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "is_novice_reward_available"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "click_claim_novice_reward"
+      },
+      "branches": [
+        {
+          "condition": "variables.get('novice_step', 0) >= variables.get('target_novice_steps', 3)",
+          "next": "novice_completed"
+        }
+      ],
+      "next": ["track_novice_quest"],
+      "timeout_sec": 20.0
+    },
+    {
+      "name": "novice_completed",
+      "recognition": {
+        "type": "always"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "finish_novice_tasks"
+      },
+      "is_terminal": true,
+      "next": [],
+      "timeout_sec": 10.0
+    }
+  ]
+}

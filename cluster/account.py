@@ -7,6 +7,7 @@ and maintains gold/silver earnings across multi-account farming operations.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import random
 import threading
 import time
@@ -328,3 +329,39 @@ class AccountMatrix:
     def export_to_dict(self) -> List[Dict[str, Any]]:
         with self._lock:
             return [a.to_dict() for a in self._accounts.values()]
+
+    def save_to_json(self, file_path: str) -> bool:
+        """Persist all registered account data to JSON file."""
+        with self._lock:
+            try:
+                data = [a.model_dump() for a in self._accounts.values()]
+                path = Path(file_path)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                logger.info(f"Saved {len(data)} accounts to {file_path}")
+                return True
+            except Exception as e:
+                logger.error(f"Failed to save accounts to {file_path}: {e}")
+                return False
+
+    def load_from_json(self, file_path: str) -> int:
+        """Load and register account configurations from JSON file."""
+        with self._lock:
+            path = Path(file_path)
+            if not path.exists():
+                logger.warning(f"Account file {file_path} does not exist.")
+                return 0
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    raw_data = json.load(f)
+                loaded = 0
+                for item in raw_data:
+                    cfg = AccountConfig(**item)
+                    self._accounts[cfg.account_id] = cfg
+                    loaded += 1
+                logger.info(f"Loaded {loaded} accounts from {file_path}")
+                return loaded
+            except Exception as e:
+                logger.error(f"Failed to load accounts from {file_path}: {e}")
+                return 0
