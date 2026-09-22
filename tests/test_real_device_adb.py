@@ -107,12 +107,12 @@ def test_real_adb_device_frame_resizing():
 
 @skip_if_no_adb
 def test_real_adb_device_app_lifecycle():
-    """Verify app management on real device (Appium Settings test app)."""
+    """Verify app management on real device (using standard Android settings or installed game)."""
     from core.device.adb import AdbDevice
     dev = AdbDevice(serial=CONNECTED_SERIAL)
     assert dev.connect() is True
 
-    pkg = "io.appium.settings"
+    pkg = "com.android.settings"
     # Stop app first
     dev.stop_app(pkg)
     assert dev.is_app_running(pkg) is False

@@ -49,10 +49,14 @@ class AdbInputDriver(BaseInputDriver):
         self._run_adb("input", "swipe", str(sx), str(sy), str(ex), str(ey), str(duration_ms))
 
     def key_down(self, key_code: str) -> None:
-        self._run_adb("input", "keyevent", key_code)
+        self._run_adb("input", "keyevent", str(key_code))
 
     def key_up(self, key_code: str) -> None:
         pass
+
+    def text(self, content: str) -> None:
+        """Type text string via ADB input text."""
+        self._run_adb("input", "text", content)
 
 
 class AdbDevice(BaseDevice):
@@ -225,6 +229,14 @@ class AdbDevice(BaseDevice):
         time.sleep(0.15)
         return [(tx1, ty1), (tx2, ty2)]
 
+    def input_text(self, content: str) -> None:
+        """Type text string onto the connected ADB device."""
+        self._driver.text(content)
+
+    def press_key(self, key_code: Union[int, str]) -> None:
+        """Send keyevent (e.g. 4 for BACK, 66 for ENTER) to ADB device."""
+        self._driver.key_down(str(key_code))
+
     def set_device_resolution(self, width: int = 1280, height: int = 720) -> bool:
         """Override physical display resolution using wm size."""
         size_str = f"{width}x{height}"
@@ -255,14 +267,21 @@ class AdbDevice(BaseDevice):
             return False
 
     def start_app(self, package_name: str, activity: Optional[str] = None) -> bool:
-        """Start an application via monkey or am start."""
+        """Start an application via resolve-activity + am start, or monkey fallback."""
         try:
             if activity:
                 target = f"{package_name}/{activity}"
                 out = self._driver._run_adb("am", "start", "-n", target)
             else:
-                out = self._driver._run_adb("monkey", "-p", package_name, "-c", "android.intent.category.LAUNCHER", "1")
-            return "events injected: 1" in out.lower() or "starting" in out.lower() or out.strip() == ""
+                resolve_out = self._driver._run_adb("cmd", "package", "resolve-activity", "--brief", package_name)
+                act_lines = [l.strip() for l in resolve_out.splitlines() if "/" in l and not l.startswith("priority=")]
+                if act_lines:
+                    target = act_lines[0]
+                    out = self._driver._run_adb("am", "start", "-n", target)
+                else:
+                    out = self._driver._run_adb("monkey", "-p", package_name, "-c", "android.intent.category.LAUNCHER", "1")
+            time.sleep(0.5)
+            return self.is_app_running(package_name) or "starting" in out.lower() or "events injected: 1" in out.lower()
         except Exception as e:
             logger.error(f"Failed to start app [{package_name}]: {e}")
             return False
