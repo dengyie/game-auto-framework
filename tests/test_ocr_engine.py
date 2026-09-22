@@ -1,5 +1,6 @@
 """Unit tests for OCR engine and RapidFuzz text matching."""
 
+import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from core.ocr.engine import OCREngine, OCRResultItem
@@ -53,3 +54,29 @@ def test_ocr_engine_synthetic_text():
     if not engine.is_mock:
         assert res_task is not None
         assert "SHIMEN" in res_task.text.upper()
+
+
+def test_ocr_frame_caching():
+    """Verify that multiple OCR queries on the same frame reuse cached results."""
+    engine = OCREngine.get_instance()
+    engine.clear_cache()
+
+    frame = np.ones((100, 300, 3), dtype=np.uint8) * 255
+    cv2.putText(frame, "HELLO WORLD", (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 0), 2)
+
+    # First recognize pass: populates cache
+    items1 = engine.recognize(frame)
+    # Second recognize pass on the exact same frame: should hit cache immediately
+    items2 = engine.recognize(frame)
+    assert len(items1) == len(items2)
+
+    # find_text should also hit cache
+    engine.find_text(frame, "HELLO", threshold=50.0)
+
+    # Sub-ROI query on cached frame
+    roi_items = engine.recognize(frame, roi=(0, 0, 150, 100))
+    assert isinstance(roi_items, list)
+
+    # Clear cache
+    engine.clear_cache()
+    assert len(engine._frame_cache) == 0

@@ -75,7 +75,33 @@ class AdbDevice(BaseDevice):
         self.auto_scale = auto_scale
         self.resize_frame_to_baseline = resize_frame_to_baseline
         self.actual_resolution: Optional[Tuple[int, int]] = None
+        self._scale_x: float = 1.0
+        self._scale_y: float = 1.0
+        self._inv_scale_x: float = 1.0
+        self._inv_scale_y: float = 1.0
         self._driver = AdbInputDriver(self.serial)
+
+    def _update_scales(self) -> None:
+        """Precalculate and cache coordinate scaling ratios to eliminate repeated division."""
+        if not self.auto_scale or not self.actual_resolution:
+            self._scale_x = 1.0
+            self._scale_y = 1.0
+            self._inv_scale_x = 1.0
+            self._inv_scale_y = 1.0
+            return
+
+        actual_w, actual_h = self.actual_resolution
+        base_w, base_h = self.resolution
+        if base_w > 0 and base_h > 0 and actual_w > 0 and actual_h > 0:
+            self._scale_x = actual_w / base_w
+            self._scale_y = actual_h / base_h
+            self._inv_scale_x = base_w / actual_w
+            self._inv_scale_y = base_h / actual_h
+        else:
+            self._scale_x = 1.0
+            self._scale_y = 1.0
+            self._inv_scale_x = 1.0
+            self._inv_scale_y = 1.0
 
     @property
     def platform_type(self) -> str:
@@ -135,6 +161,7 @@ class AdbDevice(BaseDevice):
                 if is_landscape and w < h:
                     w, h = h, w
                 self.actual_resolution = (w, h)
+                self._update_scales()
                 logger.info(f"Detected ADB device [{self.serial}] resolution: {self.actual_resolution}")
         except Exception as e:
             logger.warning(f"Failed to probe device specs: {e}")
@@ -148,26 +175,16 @@ class AdbDevice(BaseDevice):
         self._connected = False
 
     def map_coordinates(self, x: float, y: float) -> Tuple[float, float]:
-        """Map canonical baseline coordinates (e.g. 1280x720) to physical device coordinates."""
+        """Map canonical baseline coordinates (e.g. 1280x720) to physical device coordinates using cached scale ratios."""
         if not self.auto_scale or not self.actual_resolution:
             return x, y
-        actual_w, actual_h = self.actual_resolution
-        base_w, base_h = self.resolution
-        if base_w <= 0 or base_h <= 0:
-            return x, y
-        scale_x = actual_w / base_w
-        scale_y = actual_h / base_h
-        return x * scale_x, y * scale_y
+        return x * self._scale_x, y * self._scale_y
 
     def unmap_coordinates(self, x: float, y: float) -> Tuple[float, float]:
-        """Map physical device coordinates back to canonical baseline coordinates."""
+        """Map physical device coordinates back to canonical baseline coordinates using cached scale ratios."""
         if not self.auto_scale or not self.actual_resolution:
             return x, y
-        actual_w, actual_h = self.actual_resolution
-        base_w, base_h = self.resolution
-        if actual_w <= 0 or actual_h <= 0:
-            return x, y
-        return x * (base_w / actual_w), y * (base_h / actual_h)
+        return x * self._inv_scale_x, y * self._inv_scale_y
 
     def screencap(self, raw: bool = False) -> bytes:
         """
@@ -184,12 +201,18 @@ class AdbDevice(BaseDevice):
                 raw_bytes = res.stdout
                 if len(raw_bytes) >= 24 and raw_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
                     pw, ph = struct.unpack(">II", raw_bytes[16:24])
-                    self.actual_resolution = (pw, ph)
+                    if self.actual_resolution != (pw, ph):
+                        self.actual_resolution = (pw, ph)
+                        self._update_scales()
 
                 if raw or not self.resize_frame_to_baseline:
                     return raw_bytes
 
                 target_w, target_h = self.resolution
+                # Zero-reencode optimization: if physical resolution matches baseline, return raw PNG bytes directly
+                if self.actual_resolution and self.actual_resolution == (target_w, target_h):
+                    return raw_bytes
+
                 if self.actual_resolution and self.actual_resolution != (target_w, target_h):
                     img = cv2.imdecode(np.frombuffer(raw_bytes, np.uint8), cv2.IMREAD_COLOR)
                     if img is not None:
@@ -202,6 +225,42 @@ class AdbDevice(BaseDevice):
             raise RuntimeError(f"screencap failed with code {res.returncode}: {res.stderr.decode()}")
         except Exception as e:
             logger.error(f"ADB screencap failed on [{self.serial}]: {e}")
+            raise
+
+    def screencap_mat(self, raw: bool = False) -> np.ndarray:
+        """
+        Direct frame capture into OpenCV BGR numpy array without re-encoding to PNG.
+        Saves 50~100ms encoding + 30~50ms subsequent decoding.
+        """
+        if not self._connected:
+            raise RuntimeError(f"ADB device [{self.serial}] is disconnected")
+
+        cmd = ["adb", "-s", self.serial, "exec-out", "screencap", "-p"]
+        try:
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=6)
+            if res.returncode == 0 and len(res.stdout) > 0:
+                raw_bytes = res.stdout
+                if len(raw_bytes) >= 24 and raw_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+                    pw, ph = struct.unpack(">II", raw_bytes[16:24])
+                    if self.actual_resolution != (pw, ph):
+                        self.actual_resolution = (pw, ph)
+                        self._update_scales()
+
+                img = cv2.imdecode(np.frombuffer(raw_bytes, np.uint8), cv2.IMREAD_COLOR)
+                if img is None:
+                    raise RuntimeError("Failed to decode screencap buffer into cv2 image")
+
+                if raw or not self.resize_frame_to_baseline:
+                    return img
+
+                target_w, target_h = self.resolution
+                if img.shape[1] != target_w or img.shape[0] != target_h:
+                    img = cv2.resize(img, (target_w, target_h), interpolation=cv2.INTER_AREA)
+
+                return img
+            raise RuntimeError(f"screencap failed with code {res.returncode}: {res.stderr.decode()}")
+        except Exception as e:
+            logger.error(f"ADB screencap_mat failed on [{self.serial}]: {e}")
             raise
 
     def screencap_raw(self) -> bytes:

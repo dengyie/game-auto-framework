@@ -260,11 +260,19 @@ class ClusterSupervisor:
 
         self.total_alerts_sent += 1
         try:
-            self.notifier.broadcast_alert(
-                title=title,
-                message=message,
-                screenshot_bytes=screenshot_bytes,
-            )
+            if hasattr(self.notifier, "send_alert"):
+                self.notifier.send_alert(
+                    title=title,
+                    message=message,
+                    level="warning",
+                    image_bytes=screenshot_bytes,
+                )
+            elif hasattr(self.notifier, "broadcast_alert"):
+                self.notifier.broadcast_alert(
+                    title=title,
+                    message=message,
+                    screenshot_bytes=screenshot_bytes,
+                )
         except Exception as e:
             logger.warning(f"Failed to broadcast webhook alert: {e}")
 

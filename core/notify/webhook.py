@@ -135,6 +135,21 @@ class WebhookNotifier:
 
         return results
 
+    def broadcast_alert(
+        self,
+        title: str,
+        message: str,
+        screenshot_bytes: Optional[bytes] = None,
+        channels: Optional[List[str]] = None,
+    ) -> Dict[str, bool]:
+        """Broadcast alert alias ensuring backward compatibility."""
+        return self.send_alert(
+            title=title,
+            message=message,
+            image_bytes=screenshot_bytes,
+            channels=channels,
+        )
+
     def send_circuit_breaker_alert(
         self,
         device_name: str,

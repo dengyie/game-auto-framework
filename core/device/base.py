@@ -60,6 +60,19 @@ class BaseDevice(abc.ABC):
         """
         pass
 
+    def screencap_mat(self) -> Any:
+        """
+        Capture current frame directly as OpenCV numpy array.
+        Subclasses can override with zero-reencode fast paths.
+        """
+        import cv2
+        import numpy as np
+
+        raw_bytes = self.screencap()
+        if not raw_bytes:
+            return None
+        return cv2.imdecode(np.frombuffer(raw_bytes, np.uint8), cv2.IMREAD_COLOR)
+
     def click(self, x: float, y: float, radius: float = 6.0) -> Tuple[int, int]:
         """Convenience method to execute humanized click."""
         return self.controller.human_click(x, y, radius_x=radius, radius_y=radius)

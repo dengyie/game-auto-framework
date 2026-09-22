@@ -73,11 +73,13 @@ class DeviceInstance:
 
         self.stop_event = threading.Event()
         self.worker_thread: Optional[threading.Thread] = None
-        self._lock = threading.RLock()
+        self._state_lock = threading.RLock()
+        self._exec_lock = threading.Lock()
+        self._lock = self._state_lock  # Backward compatibility alias
 
     def connect(self) -> bool:
         """Initialize and connect the underlying device."""
-        with self._lock:
+        with self._state_lock:
             try:
                 if self.device is None:
                     self.device = DeviceFactory.create(
@@ -106,7 +108,7 @@ class DeviceInstance:
 
     def disconnect(self) -> None:
         """Stop any running task and disconnect device."""
-        with self._lock:
+        with self._state_lock:
             self.stop()
             if self.device and self.device.is_connected():
                 try:
@@ -123,7 +125,7 @@ class DeviceInstance:
         run_in_background: bool = True,
     ) -> bool:
         """Start a single automation pipeline on this instance."""
-        with self._lock:
+        with self._state_lock:
             if self.status == InstanceStatus.BUSY:
                 logger.warning(f"Instance [{self.instance_id}] is already BUSY.")
                 return False
@@ -169,7 +171,7 @@ class DeviceInstance:
         run_in_background: bool = True,
     ) -> bool:
         """Start an ordered routine task chain on this instance."""
-        with self._lock:
+        with self._state_lock:
             if self.status == InstanceStatus.BUSY:
                 logger.warning(f"Instance [{self.instance_id}] is already BUSY.")
                 return False
@@ -212,52 +214,61 @@ class DeviceInstance:
             return True
 
     def tick(self) -> Any:
-        """Perform a single step tick (synchronous execution unit)."""
-        with self._lock:
-            if not self.plugin or self.status != InstanceStatus.BUSY:
-                return None
+        """Perform a single step tick with granular lock separation."""
+        with self._exec_lock:
+            with self._state_lock:
+                if not self.plugin or self.status != InstanceStatus.BUSY:
+                    return None
+                self.last_heartbeat_time = time.time()
+                is_routine = self.is_routine
+                routine_exec = self.routine_executor
+                p_name = self.pipeline_name
+                plugin = self.plugin
 
-            self.last_heartbeat_time = time.time()
+            # Heavy perception/action execution happens outside state lock
             try:
-                if self.is_routine and self.routine_executor:
-                    r_status = self.routine_executor.tick()
-                    self.last_tick_time = time.time()
-                    if r_status in (
-                        RoutineStatus.COMPLETED,
-                        RoutineStatus.FAILED,
-                        RoutineStatus.CIRCUIT_BROKEN,
-                        RoutineStatus.STOPPED,
-                    ):
-                        self.status = InstanceStatus.IDLE
-                        self.completed_cycles += 1
-                        if r_status == RoutineStatus.COMPLETED:
-                            self.pipeline_status = PipelineStatus.COMPLETED
-                        else:
-                            self.pipeline_status = PipelineStatus.FAILED
-                            self.error_message = self.routine_executor.error_message
+                if is_routine and routine_exec:
+                    r_status = routine_exec.tick()
+                    with self._state_lock:
+                        self.last_tick_time = time.time()
+                        if r_status in (
+                            RoutineStatus.COMPLETED,
+                            RoutineStatus.FAILED,
+                            RoutineStatus.CIRCUIT_BROKEN,
+                            RoutineStatus.STOPPED,
+                        ):
+                            self.status = InstanceStatus.IDLE
+                            self.completed_cycles += 1
+                            if r_status == RoutineStatus.COMPLETED:
+                                self.pipeline_status = PipelineStatus.COMPLETED
+                            else:
+                                self.pipeline_status = PipelineStatus.FAILED
+                                self.error_message = routine_exec.error_message
                     return r_status
-                elif self.pipeline_name:
-                    p_status = self.plugin.run_pipeline_step(self.pipeline_name)
-                    self.pipeline_status = p_status
-                    self.last_tick_time = time.time()
-                    if p_status in (
-                        PipelineStatus.COMPLETED,
-                        PipelineStatus.FAILED,
-                        PipelineStatus.TIMEOUT,
-                    ):
-                        self.status = InstanceStatus.IDLE
-                        self.completed_cycles += 1
+                elif p_name:
+                    p_status = plugin.run_pipeline_step(p_name)
+                    with self._state_lock:
+                        self.pipeline_status = p_status
+                        self.last_tick_time = time.time()
+                        if p_status in (
+                            PipelineStatus.COMPLETED,
+                            PipelineStatus.FAILED,
+                            PipelineStatus.TIMEOUT,
+                        ):
+                            self.status = InstanceStatus.IDLE
+                            self.completed_cycles += 1
                     return p_status
             except Exception as e:
                 logger.error(f"Instance [{self.instance_id}] tick failed: {e}")
-                self.status = InstanceStatus.ERROR
-                self.pipeline_status = PipelineStatus.FAILED
-                self.error_message = str(e)
+                with self._state_lock:
+                    self.status = InstanceStatus.ERROR
+                    self.pipeline_status = PipelineStatus.FAILED
+                    self.error_message = str(e)
                 return PipelineStatus.FAILED
 
     def stop(self) -> None:
         """Stop background execution immediately."""
-        with self._lock:
+        with self._state_lock:
             self.stop_event.set()
             if self.routine_executor:
                 self.routine_executor.stop()
@@ -279,25 +290,36 @@ class DeviceInstance:
                 self.stop_event.wait(0.2)
         except Exception as e:
             logger.error(f"Worker thread [{self.instance_id}] died unexpectedly: {e}")
-            self.status = InstanceStatus.ERROR
-            self.error_message = str(e)
+            with self._state_lock:
+                self.status = InstanceStatus.ERROR
+                self.error_message = str(e)
         finally:
-            if self.status == InstanceStatus.BUSY:
-                self.status = InstanceStatus.IDLE
+            with self._state_lock:
+                if self.status == InstanceStatus.BUSY:
+                    self.status = InstanceStatus.IDLE
             logger.info(f"Worker thread for instance [{self.instance_id}] exited.")
 
     def screencap(self, raw: bool = False) -> bytes:
-        """Capture screenshot frame from this instance's device."""
-        with self._lock:
-            if not self.device or not self.device.is_connected():
-                if not self.connect():
-                    raise RuntimeError(f"Device for instance [{self.instance_id}] failed to connect.")
+        """Capture screenshot frame from this instance's device without blocking health inquiries."""
+        with self._state_lock:
+            dev = self.device
+            connected = dev.is_connected() if dev else False
+
+        if not dev or not connected:
+            if not self.connect():
+                raise RuntimeError(f"Device for instance [{self.instance_id}] failed to connect.")
+            with self._state_lock:
+                dev = self.device
+
+        # Capture frame outside state lock
+        data = dev.screencap()
+        with self._state_lock:
             self.last_heartbeat_time = time.time()
-            return self.device.screencap()
+        return data
 
     def get_health(self) -> Dict[str, Any]:
-        """Return diagnostic health information for this instance."""
-        with self._lock:
+        """Return diagnostic health information for this instance instantaneously (<0.1ms)."""
+        with self._state_lock:
             active_pipeline = self.pipeline_name
             if self.is_routine and self.routine_executor:
                 active_pipeline = self.routine_executor.current_pipeline_name

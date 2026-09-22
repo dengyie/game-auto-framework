@@ -9,6 +9,8 @@ from __future__ import annotations
 import time
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+import cv2
+import numpy as np
 from pydantic import BaseModel, Field
 from loguru import logger
 
@@ -231,6 +233,13 @@ class DAGPipeline:
         if self.status != PipelineStatus.RUNNING:
             return self.status
 
+        # High-performance optimization: decode frame once if passed as bytes to share across nodes
+        if isinstance(frame, bytes):
+            nparr = np.frombuffer(frame, np.uint8)
+            decoded_frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            if decoded_frame is not None:
+                frame = decoded_frame
+
         now = time.time()
 
         # 1. Heartbeat Watchdog & Self-Healing Escape
@@ -292,9 +301,15 @@ class DAGPipeline:
                 return self.status
 
             # Standard candidate next transitions
+            action_is_interactive = current_node.action.type in ("click", "swipe", "key")
             for next_name in current_node.next_nodes:
                 next_node = self.nodes.get(next_name)
-                if next_node and self._eval_recognition(next_node, ctx, frame):
+                if not next_node:
+                    continue
+                # If an interactive action just executed, skip visual evaluation on stale frame
+                if action_is_interactive and next_node.recognition.type in ("template", "ocr", "battle"):
+                    continue
+                if self._eval_recognition(next_node, ctx, frame):
                     self.current_node_name = next_name
                     self.node_entered_time = now
                     self.retry_count = 0

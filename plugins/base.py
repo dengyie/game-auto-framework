@@ -69,9 +69,12 @@ class BaseGamePlugin(abc.ABC):
         if pipeline.status == PipelineStatus.IDLE:
             pipeline.start()
 
-        # Capture current frame from device
+        # Capture current frame from device (prefer zero-copy screencap_mat if available)
         try:
-            frame = self.device.screencap()
+            if hasattr(self.device, "screencap_mat"):
+                frame = self.device.screencap_mat()
+            else:
+                frame = self.device.screencap()
         except Exception as e:
             logger.warning(f"Device capture failed during pipeline step: {e}")
             frame = None
