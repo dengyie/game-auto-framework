@@ -1,0 +1,117 @@
+{
+  "name": "daily_yuntong",
+  "entry": "accept_yuntong_task",
+  "nodes": [
+    {
+      "name": "accept_yuntong_task",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "find_zheng_biaotou"
+      },
+      "action": {
+        "type": "click",
+        "target_pos": [930, 430]
+      },
+      "next": [
+        "cruising_escort",
+        "battle_escort_thief"
+      ],
+      "timeout_sec": 30.0
+    },
+    {
+      "name": "cruising_escort",
+      "recognition": {
+        "type": "always"
+      },
+      "action": {
+        "type": "wait",
+        "duration": 1.5
+      },
+      "branches": [
+        {
+          "condition": "yuntong_completed >= 3",
+          "next": "yuntong_finish"
+        }
+      ],
+      "next": [
+        "battle_escort_thief",
+        "deliver_escort"
+      ],
+      "timeout_sec": 90.0
+    },
+    {
+      "name": "battle_escort_thief",
+      "recognition": {
+        "type": "battle"
+      },
+      "action": {
+        "type": "click",
+        "target_pos": [1120, 620]
+      },
+      "next": [
+        "wait_escort_battle_end"
+      ],
+      "timeout_sec": 45.0
+    },
+    {
+      "name": "wait_escort_battle_end",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "is_battle_ended"
+      },
+      "action": {
+        "type": "wait",
+        "duration": 1.0
+      },
+      "next": [
+        "cruising_escort",
+        "deliver_escort"
+      ],
+      "timeout_sec": 120.0
+    },
+    {
+      "name": "deliver_escort",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "is_escort_destination_reached"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "increment_yuntong_count"
+      },
+      "branches": [
+        {
+          "condition": "yuntong_completed >= 3",
+          "next": "yuntong_finish"
+        }
+      ],
+      "next": [
+        "accept_yuntong_task"
+      ],
+      "timeout_sec": 30.0
+    },
+    {
+      "name": "yuntong_finish",
+      "recognition": {
+        "type": "always"
+      },
+      "action": {
+        "type": "none"
+      },
+      "is_terminal": true
+    },
+    {
+      "name": "intercept_anti_bot_popup",
+      "is_interrupt": true,
+      "recognition": {
+        "type": "custom",
+        "custom_func": "detect_anti_bot_popup"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "resolve_anti_bot_popup"
+      },
+      "timeout_sec": 15.0
+    }
+  ]
+}

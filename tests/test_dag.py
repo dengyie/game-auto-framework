@@ -13,7 +13,7 @@ def test_dag_pipeline_from_json():
 
     pipeline = DAGPipeline.from_dict(data)
     assert pipeline.name == "daily_shimen"
-    assert len(pipeline.nodes) == 6
+    assert len(pipeline.nodes) == 9
     assert len(pipeline.interrupt_nodes) == 1
     assert pipeline.interrupt_nodes[0].name == "intercept_anti_bot_popup"
 
@@ -88,3 +88,82 @@ def test_self_healing_escape_escalation():
     lvl3 = manager.check_and_heal()
     assert lvl3 == EscapeLevel.LEVEL_2_MEDIUM
     assert actions[-1] == "medium"
+
+
+def test_dag_conditional_branches_and_context_flow():
+    pipeline_data = {
+        "name": "test_branching",
+        "entry": "check_count",
+        "nodes": [
+            {
+                "name": "check_count",
+                "recognition": {"type": "always"},
+                "action": {"type": "set_var", "var_key": "completed_rounds", "var_value": 20},
+                "branches": [
+                    {"condition": "completed_rounds >= 20", "next": "finish_task"},
+                    {"condition": "completed_rounds < 20", "next": "continue_task"},
+                ],
+            },
+            {
+                "name": "continue_task",
+                "recognition": {"type": "always"},
+                "is_terminal": True,
+            },
+            {
+                "name": "finish_task",
+                "recognition": {"type": "always"},
+                "is_terminal": True,
+            },
+        ],
+    }
+
+    pipeline = DAGPipeline.from_dict(pipeline_data)
+    ctx = PipelineContext()
+    ctx.variables["completed_rounds"] = 0
+
+    pipeline.start()
+    status = pipeline.tick(ctx)
+
+    # After step 1, completed_rounds set to 20, branch routed to finish_task
+    assert pipeline.current_node_name == "finish_task"
+    assert ctx.variables["completed_rounds"] == 20
+
+    # Step 2: execute finish_task (terminal)
+    status2 = pipeline.tick(ctx)
+    assert status2 == PipelineStatus.COMPLETED
+    assert "finish_task" in ctx.history
+
+
+def test_dag_watchdog_integration():
+    import time
+    actions = []
+    manager = SelfHealingEscapeManager(
+        stall_threshold_sec=0.01,
+        max_level_1_attempts=1,
+        on_minor_escape=lambda: actions.append("healed_by_watchdog"),
+    )
+
+    pipeline_data = {
+        "name": "stalled_pipeline",
+        "entry": "stalled_node",
+        "nodes": [
+            {
+                "name": "stalled_node",
+                "recognition": {"type": "custom", "custom_func": "never_match"},
+                "timeout_sec": 10.0,
+            }
+        ],
+    }
+
+    pipeline = DAGPipeline.from_dict(pipeline_data)
+    ctx = PipelineContext(escape_manager=manager)
+    ctx.register_recognition("never_match", lambda c, f, r: False)
+
+    pipeline.start()
+    time.sleep(0.02)
+
+    # Tick should trigger watchdog escape
+    pipeline.tick(ctx)
+    assert "ESCAPE:LEVEL_1_MINOR" in ctx.history
+    assert "healed_by_watchdog" in actions
+

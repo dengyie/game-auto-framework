@@ -83,17 +83,33 @@ class HumanizedController:
         center_y: float,
         radius_x: float = 8.0,
         radius_y: float = 8.0,
-        press_duration_range: Tuple[float, float] = (0.045, 0.110),
+        press_duration_range: Tuple[float, float] = (0.055, 0.120),
+        reaction_delay_range: Optional[Tuple[float, float]] = None,
+        micro_drift: bool = True,
     ) -> Tuple[int, int]:
-        """Click with 2D Gaussian offset and human-like press duration."""
+        """Click with human-like reaction time, 2D Gaussian offset, dwell time, and fingertip micro-drift."""
+        if reaction_delay_range:
+            time.sleep(random.uniform(*reaction_delay_range))
+
         tx, ty = generate_gaussian_target(center_x, center_y, radius_x, radius_y)
         self.driver.move_to(tx, ty)
         self.driver.mouse_down(tx, ty)
-        duration = random.uniform(*press_duration_range)
-        time.sleep(duration)
-        self.driver.mouse_up(tx, ty)
-        # Post-click idle hesitation
-        time.sleep(random.uniform(0.08, 0.22))
+
+        # Micro-drift: human finger pad contact shifts slightly (1-2 px) during down press
+        dwell_time = random.uniform(*press_duration_range)
+        if micro_drift and random.random() < 0.6:
+            drift_x = tx + random.choice([-1, 0, 1])
+            drift_y = ty + random.choice([-1, 0, 1])
+            time.sleep(dwell_time * 0.5)
+            self.driver.move_to(drift_x, drift_y)
+            time.sleep(dwell_time * 0.5)
+            self.driver.mouse_up(drift_x, drift_y)
+        else:
+            time.sleep(dwell_time)
+            self.driver.mouse_up(tx, ty)
+
+        # Post-click hesitation
+        time.sleep(random.uniform(0.04, 0.12))
         return tx, ty
 
     def human_swipe(

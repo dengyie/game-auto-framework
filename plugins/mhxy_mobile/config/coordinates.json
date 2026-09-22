@@ -2,17 +2,43 @@
   "resolution_base": [1280, 720],
   "common": {
     "btn_return": [1225, 45, 30, 30],
+    "btn_close_dialog": [1110, 115, 30, 30],
     "btn_chat_close": [980, 110, 25, 25],
     "btn_bag": [1180, 640, 45, 45],
-    "btn_task_track_top": [1120, 195, 120, 35]
+    "btn_task_track_top": [1120, 195, 120, 35],
+    "btn_activity": [450, 40, 45, 45]
   },
   "shimen": {
     "btn_accept": [930, 430, 80, 30],
     "btn_turnin": [930, 430, 80, 30],
-    "btn_buy_drug": [880, 520, 60, 30]
+    "btn_buy_drug": [880, 520, 60, 30],
+    "btn_shop_confirm": [780, 550, 80, 35]
+  },
+  "baotu": {
+    "btn_talk_bartender": [930, 430, 80, 30],
+    "btn_accept_baotu": [930, 430, 80, 30],
+    "bag_first_slot": [850, 220, 55, 55],
+    "btn_use_item": [720, 520, 80, 35]
+  },
+  "yuntong": {
+    "btn_talk_zheng": [930, 430, 80, 30],
+    "btn_accept_escort": [930, 430, 80, 30],
+    "btn_pay_deposit": [720, 480, 80, 35]
+  },
+  "battle": {
+    "btn_auto_battle": [1120, 620, 60, 40],
+    "btn_escape": [1220, 620, 40, 40]
+  },
+  "quiz": {
+    "question_roi": [380, 180, 520, 100],
+    "option_1": [420, 310, 440, 40],
+    "option_2": [420, 370, 440, 40],
+    "option_3": [420, 430, 440, 40],
+    "option_4": [420, 490, 440, 40]
   },
   "anti_bot": {
     "dialog_bbox": [340, 160, 600, 400],
+    "prompt_roi": [380, 220, 520, 60],
     "option_1": [420, 360, 180, 40],
     "option_2": [680, 360, 180, 40],
     "option_3": [420, 430, 180, 40],

@@ -24,7 +24,7 @@ class BaseGamePlugin(abc.ABC):
         self.plugin_id = self.manifest.get("id", plugin_dir.name)
         self.coordinates: Dict[str, Any] = self._load_json(plugin_dir / "config" / "coordinates.json")
         self.pipelines: Dict[str, DAGPipeline] = {}
-        self.context = PipelineContext()
+        self.context = PipelineContext(device=self.device, controller=self.device.controller)
 
         # Bootstrap pipeline definitions
         self._load_all_pipelines()
