@@ -4,11 +4,11 @@ export default {
 
     // If request is for an API endpoint or health check, proxy to DGN Links VPS backend
     if (url.pathname.startsWith("/api/") || url.pathname === "/health") {
-      const backendUrl = env.BACKEND_URL || "http://45.202.199.205:8000";
+      const backendUrl = env.BACKEND_URL || "https://game.mangoqwq.com";
       const targetUrl = new URL(url.pathname + url.search, backendUrl);
 
       const requestHeaders = new Headers(request.headers);
-      requestHeaders.set("Host", "45.202.199.205:8000");
+      requestHeaders.set("Host", "game.mangoqwq.com");
       requestHeaders.set("X-Forwarded-Host", url.host);
       requestHeaders.set("X-Forwarded-Proto", url.protocol.replace(":", ""));
 
