@@ -1,0 +1,27 @@
+services:
+  game-auto-soak-test:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: game-auto-soak-24h
+    restart: unless-stopped
+    command: ["python", "scripts/soak_test_24h.py", "--duration-hours", "24.0", "--sample-interval-sec", "10.0", "--instances", "5", "--report", "/app/logs/soak_test_report.json"]
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DEFAULT_DEVICE_TYPE=virtual
+    volumes:
+      - ../logs:/app/logs
+      - ../config:/app/config
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1536M
+        reservations:
+          cpus: '0.2'
+          memory: 256M
