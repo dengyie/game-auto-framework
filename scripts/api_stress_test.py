@@ -99,6 +99,7 @@ class APIStressTester:
         timeout_sec: float = 10.0,
         p95_threshold_ms: float = 500.0,
         report_path: str = "reports/api_stress_report.json",
+        app: Optional[Any] = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.concurrency = concurrency
@@ -107,6 +108,7 @@ class APIStressTester:
         self.p95_threshold_ms = p95_threshold_ms
         self.report_path = Path(report_path)
         self.report_path.parent.mkdir(parents=True, exist_ok=True)
+        self.app = app
 
         self.endpoints = [
             "/health",
@@ -169,7 +171,8 @@ class APIStressTester:
         start_time = time.perf_counter()
 
         limits = httpx.Limits(max_keepalive_connections=self.concurrency, max_connections=self.concurrency * 2)
-        async with httpx.AsyncClient(limits=limits) as client:
+        transport = httpx.ASGITransport(app=self.app) if self.app is not None else None
+        async with httpx.AsyncClient(limits=limits, transport=transport) as client:
             workers = [
                 asyncio.create_task(self._worker(client, queue, lock))
                 for _ in range(self.concurrency)

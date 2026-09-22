@@ -19,6 +19,8 @@ def test_dashboard_html_rendering(client):
         assert "Game Auto Framework" in res.text
         assert "kpi-grid" in res.text
         assert "pane-instances" in res.text
+        assert "pane-soak" in res.text
+        assert "24h 极限压测与时序遥测" in res.text
 
 
 def test_plugin_discovery_endpoints(client):

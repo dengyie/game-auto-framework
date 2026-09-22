@@ -4,7 +4,12 @@ Provides REST endpoints to start/stop pipelines, monitor progress, chain routine
 """
 
 from __future__ import annotations
+import csv
+import json
+import os
 from pathlib import Path
+import signal
+import subprocess
 import sys
 import threading
 import time
@@ -695,4 +700,231 @@ def get_supervisor_status() -> Dict[str, Any]:
 def trigger_supervisor_check() -> Dict[str, Any]:
     """Trigger an immediate synchronous watchdog inspection pass."""
     return SUPERVISOR.check_once()
+
+
+# =====================================================================
+# Milestone 6: 24h Soak Test Telemetry & API Stress Testing Endpoints
+# =====================================================================
+
+SOAK_REPORT_JSON = Path("logs/soak_test_report.json")
+SOAK_REPORT_CSV = Path("logs/soak_test_report.csv")
+SOAK_PID_FILE = Path("logs/soak_test.pid")
+
+
+class StartSoakRequest(BaseModel):
+    duration_hours: float = Field(default=24.0, description="Test duration in hours")
+    instances: int = Field(default=5, description="Number of instances")
+    sample_interval_sec: float = Field(default=10.0, description="Telemetry sample interval")
+    device_type: str = Field(default="virtual", description="'virtual' or 'adb'")
+    inject_faults: bool = Field(default=True, description="Enable periodic chaos fault injection")
+    enable_cv_stress: bool = Field(default=True, description="Enable synthetic CV/OCR compute load")
+
+
+class RunAPIStressRequest(BaseModel):
+    target_url: Optional[str] = Field(default=None, description="Target base URL. If omitted or in_process=True, uses in-process ASGI transport.")
+    concurrency: int = Field(default=15, description="Number of concurrent virtual clients")
+    requests: int = Field(default=300, description="Total number of requests")
+    p95_threshold_ms: float = Field(default=500.0, description="P95 latency SLA threshold in ms")
+    in_process: bool = Field(default=False, description="Use in-process ASGI transport")
+
+
+def _is_pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+@app.get("/api/v1/soak/status")
+def get_soak_status() -> Dict[str, Any]:
+    """Fetch current 24h soak test execution status, memory drift, and SLA metrics."""
+    is_running = False
+    pid: Optional[int] = None
+    if SOAK_PID_FILE.exists():
+        try:
+            pid = int(SOAK_PID_FILE.read_text().strip())
+            is_running = _is_pid_alive(pid)
+        except Exception:
+            is_running = False
+
+    telemetry_samples = 0
+    baseline_rss_mb = 0.0
+    current_rss_mb = 0.0
+    memory_drift_pct = 0.0
+    elapsed_sec = 0.0
+    active_instances = 0
+    completed_ops = 0
+    faults_recovered = 0
+    deadlocks_detected = 0
+
+    if SOAK_REPORT_CSV.exists():
+        try:
+            with open(SOAK_REPORT_CSV, "r", encoding="utf-8") as f:
+                reader = csv.reader(f)
+                header = next(reader, None)
+                rows = [r for r in reader if len(r) >= 7]
+                telemetry_samples = len(rows)
+                if rows:
+                    first = rows[0]
+                    last = rows[-1]
+                    baseline_rss_mb = round(float(first[2]), 2)
+                    current_rss_mb = round(float(last[2]), 2)
+                    memory_drift_pct = round(((current_rss_mb - baseline_rss_mb) / max(baseline_rss_mb, 1.0)) * 100.0, 2)
+                    elapsed_sec = round(float(last[1]), 1)
+                    active_instances = int(last[3])
+                    completed_ops = int(last[4])
+                    faults_recovered = int(last[5])
+                    deadlocks_detected = int(last[6])
+        except Exception as e:
+            logger.warning(f"Failed to read soak telemetry CSV: {e}")
+
+    summary_data = {}
+    if SOAK_REPORT_JSON.exists():
+        try:
+            with open(SOAK_REPORT_JSON, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                summary_data = data.get("summary", {})
+        except Exception:
+            pass
+
+    return {
+        "is_running": is_running,
+        "pid": pid if is_running else None,
+        "elapsed_sec": elapsed_sec,
+        "baseline_rss_mb": baseline_rss_mb or summary_data.get("baseline_rss_mb", 0.0),
+        "current_rss_mb": current_rss_mb or summary_data.get("final_rss_mb", 0.0),
+        "memory_drift_pct": memory_drift_pct if telemetry_samples > 0 else summary_data.get("memory_drift_pct", 0.0),
+        "active_instances": active_instances or (5 if is_running else 0),
+        "total_instances": summary_data.get("num_instances", 5),
+        "completed_ops": completed_ops or summary_data.get("total_tasks_completed", 0),
+        "faults_recovered": faults_recovered or summary_data.get("total_faults_recovered", 0),
+        "deadlocks_detected": deadlocks_detected or summary_data.get("deadlocks_detected", 0),
+        "total_samples": telemetry_samples,
+        "sla_passed": summary_data.get("passed_sla", abs(memory_drift_pct) <= 5.0 and deadlocks_detected == 0),
+        "sla_violations": summary_data.get("sla_violations", []),
+    }
+
+
+@app.get("/api/v1/soak/telemetry")
+def get_soak_telemetry(limit: int = 50) -> Dict[str, Any]:
+    """Fetch the latest time-series telemetry samples from soak test CSV."""
+    if not SOAK_REPORT_CSV.exists():
+        return {"samples": [], "total_recorded": 0}
+
+    samples = []
+    try:
+        with open(SOAK_REPORT_CSV, "r", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            header = next(reader, None)
+            for r in reader:
+                if len(r) >= 7:
+                    samples.append({
+                        "timestamp": float(r[0]),
+                        "elapsed_sec": float(r[1]),
+                        "rss_mb": float(r[2]),
+                        "active_instances": int(r[3]),
+                        "completed_tasks": int(r[4]),
+                        "faults_recovered": int(r[5]),
+                        "deadlocks_detected": int(r[6]),
+                    })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read CSV: {e}")
+
+    return {
+        "samples": samples[-limit:],
+        "total_recorded": len(samples),
+    }
+
+
+@app.post("/api/v1/soak/start")
+def start_soak_test(req: StartSoakRequest) -> Dict[str, Any]:
+    """Start the soak test runner daemon in background."""
+    if SOAK_PID_FILE.exists():
+        try:
+            pid = int(SOAK_PID_FILE.read_text().strip())
+            if _is_pid_alive(pid):
+                raise HTTPException(status_code=409, detail=f"Soak test is already running (PID: {pid}).")
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+
+    cmd = [
+        sys.executable,
+        "scripts/soak_test_24h.py",
+        "--duration-hours", str(req.duration_hours),
+        "--sample-interval-sec", str(req.sample_interval_sec),
+        "--instances", str(req.instances),
+        "--device-type", req.device_type,
+        "--report", str(SOAK_REPORT_JSON),
+    ]
+    if not req.inject_faults:
+        cmd.append("--no-faults")
+    if not req.enable_cv_stress:
+        cmd.append("--no-cv-stress")
+
+    log_path = Path("logs/soak_test_24h.log")
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_file = open(log_path, "a", encoding="utf-8")
+
+    proc = subprocess.Popen(cmd, stdout=log_file, stderr=log_file, start_new_session=True)
+    SOAK_PID_FILE.write_text(str(proc.pid))
+    logger.info(f"Soak test spawned via REST API with PID: {proc.pid}")
+
+    return {
+        "status": "started",
+        "pid": proc.pid,
+        "duration_hours": req.duration_hours,
+        "instances": req.instances,
+    }
+
+
+@app.post("/api/v1/soak/stop")
+def stop_soak_test() -> Dict[str, Any]:
+    """Stop the background soak test process gracefully."""
+    if not SOAK_PID_FILE.exists():
+        return {"status": "not_running"}
+
+    try:
+        pid = int(SOAK_PID_FILE.read_text().strip())
+        if _is_pid_alive(pid):
+            os.kill(pid, signal.SIGTERM)
+            logger.info(f"Sent SIGTERM to soak test PID: {pid}")
+            time.sleep(0.5)
+            return {"status": "stopped", "pid": pid}
+        else:
+            return {"status": "already_stopped", "pid": pid}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to stop soak test: {e}")
+
+
+@app.post("/api/v1/stress/run")
+async def run_api_stress(req: RunAPIStressRequest) -> Dict[str, Any]:
+    """Trigger an on-demand high-concurrency API stress test against this server."""
+    from scripts.api_stress_test import APIStressTester
+    base_url = req.target_url or "http://127.0.0.1:8000"
+    app_to_test = app if (req.in_process or not req.target_url) else None
+    tester = APIStressTester(
+        base_url=base_url,
+        concurrency=req.concurrency,
+        total_requests=req.requests,
+        p95_threshold_ms=req.p95_threshold_ms,
+        report_path="reports/api_stress_report.json",
+        app=app_to_test,
+    )
+    summary = await tester.run()
+    return {
+        "status": "completed",
+        "passed_sla": summary.passed_sla,
+        "qps": summary.qps,
+        "overall_p50_ms": summary.overall_p50_ms,
+        "overall_p95_ms": summary.overall_p95_ms,
+        "overall_p99_ms": summary.overall_p99_ms,
+        "total_requests": summary.total_requests,
+        "total_success": summary.total_success,
+        "sla_violations": summary.sla_violations,
+        "endpoints": summary.endpoints,
+    }
+
 

@@ -1,0 +1,55 @@
+{
+  "target_base_url": "http://127.0.0.1:8000",
+  "total_requests": 4,
+  "total_success": 4,
+  "total_failed": 0,
+  "duration_sec": 0.0,
+  "qps": 1441.2,
+  "overall_p50_ms": 1.67,
+  "overall_p95_ms": 2.48,
+  "overall_p99_ms": 2.48,
+  "endpoints": {
+    "/health": {
+      "total": 1,
+      "success_rate_pct": 100.0,
+      "mean_ms": 1.67,
+      "p50_ms": 1.67,
+      "p95_ms": 1.67,
+      "p99_ms": 1.67
+    },
+    "/api/v1/plugins": {
+      "total": 1,
+      "success_rate_pct": 100.0,
+      "mean_ms": 2.48,
+      "p50_ms": 2.48,
+      "p95_ms": 2.48,
+      "p99_ms": 2.48
+    },
+    "/api/v1/status": {
+      "total": 1,
+      "success_rate_pct": 100.0,
+      "mean_ms": 0.53,
+      "p50_ms": 0.53,
+      "p95_ms": 0.53,
+      "p99_ms": 0.53
+    },
+    "/api/v1/screenshot": {
+      "total": 1,
+      "success_rate_pct": 100.0,
+      "mean_ms": 0.28,
+      "p50_ms": 0.28,
+      "p95_ms": 0.28,
+      "p99_ms": 0.28
+    },
+    "/dashboard": {
+      "total": 0,
+      "success_rate_pct": 100.0,
+      "mean_ms": 0.0,
+      "p50_ms": 0.0,
+      "p95_ms": 0.0,
+      "p99_ms": 0.0
+    }
+  },
+  "passed_sla": true,
+  "sla_violations": []
+}

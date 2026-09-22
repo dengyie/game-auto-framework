@@ -201,6 +201,7 @@
       <button class="tab-btn" onclick="switchTab('teams')">👥 组队拓扑 (<span id="tab-cnt-teams">0</span>)</button>
       <button class="tab-btn" onclick="switchTab('proxies')">🌐 独享代理池 (<span id="tab-cnt-proxies">0</span>)</button>
       <button class="tab-btn" onclick="switchTab('accounts')">💰 账号与疲劳作息 (<span id="tab-cnt-accounts">0</span>)</button>
+      <button class="tab-btn" onclick="switchTab('soak')">⚡ 24h 压测与时序遥测</button>
       <button class="tab-btn" onclick="switchTab('launcher')">🚀 任务启动器</button>
     </div>
 
@@ -292,7 +293,103 @@
       </div>
     </div>
 
-    <!-- Pane 5: Launcher -->
+    <!-- Pane 5: 24h Soak Test & API Stress -->
+    <div id="pane-soak" class="tab-pane">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+        <h3 style="font-size:1.05rem;">⚡ 24h 极限压测与时序遥测大盘</h3>
+        <div style="display:flex; gap:10px;">
+          <button id="btn-soak-toggle" class="primary" onclick="toggleSoakTest()">▶ 启动 24h 压测</button>
+          <button class="primary" style="background:#4f46e5; border-color:#818cf8;" onclick="triggerApiStressModal()">🔥 发起 500+ QPS API 打压</button>
+        </div>
+      </div>
+
+      <!-- Soak SLA KPI Subgrid -->
+      <div class="kpi-grid" style="margin-bottom:16px;">
+        <div class="kpi-card">
+          <div class="kpi-header">
+            <span class="kpi-title">24h 守护进程运行态</span>
+            <span class="badge" id="soak-status-badge">检测中...</span>
+          </div>
+          <div class="kpi-value" id="soak-runtime-val">00h 00m 00s</div>
+          <div class="kpi-sub">
+            <span>PID: <strong id="soak-pid-val" style="color:var(--cyan);">--</strong></span>
+            <span>已采样本: <strong id="soak-samples-val" style="color:#fff;">0</strong></span>
+          </div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-header">
+            <span class="kpi-title">物理内存 RSS & 漂移率</span>
+            <span class="badge" id="soak-drift-badge">SLA: ≤ 5%</span>
+          </div>
+          <div class="kpi-value" id="soak-rss-val">-- MB</div>
+          <div class="kpi-sub">
+            <span>基线: <strong id="soak-base-rss-val">-- MB</strong></span>
+            <span>漂移: <strong id="soak-drift-val">0.00%</strong></span>
+          </div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-header">
+            <span class="kpi-title">任务吞吐与混沌自愈</span>
+            <span class="badge badge-green" id="soak-heal-badge">100% 自愈</span>
+          </div>
+          <div class="kpi-value" id="soak-ops-val">0 ops</div>
+          <div class="kpi-sub">
+            <span>自愈故障: <strong id="soak-faults-val" style="color:var(--emerald);">0</strong></span>
+            <span>死锁计数: <strong id="soak-deadlocks-val" style="color:var(--rose);">0</strong></span>
+          </div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-header">
+            <span class="kpi-title">高并发 API 评测 SLA</span>
+            <span class="badge badge-cyan" id="stress-qps-badge">500+ QPS 达标</span>
+          </div>
+          <div class="kpi-value" id="stress-qps-val">-- QPS</div>
+          <div class="kpi-sub">
+            <span>P95 延迟: <strong id="stress-p95-val" style="color:var(--emerald);">-- ms</strong></span>
+            <span>P99: <strong id="stress-p99-val" style="color:var(--cyan);">-- ms</strong></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stress result card (if run) -->
+      <div id="stress-result-box" style="display:none; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:var(--radius); padding:16px; margin-bottom:16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+          <h4 style="color:#fff; font-size:0.95rem;">⚡ 最近一次 API 高并发压力测试实测报告</h4>
+          <span class="badge badge-green" id="stress-sla-tag">SLA PASSED</span>
+        </div>
+        <div id="stress-endpoint-table" class="table-container"></div>
+      </div>
+
+      <!-- Telemetry Samples Table -->
+      <div class="table-container">
+        <div style="padding:12px 16px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-weight:600; font-size:0.9rem; color:#fff;">📈 实时时序遥测采样曲线 (最新 20 次)</span>
+          <span style="font-size:0.75rem; color:var(--text-muted);">自动同步 logs/soak_test_report.csv</span>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>采样时间戳</th>
+              <th>运行时长</th>
+              <th>物理内存 (RSS)</th>
+              <th>活跃节点</th>
+              <th>累计操作数 (Ops)</th>
+              <th>混沌自愈数</th>
+              <th>死锁检测</th>
+              <th>平稳度指示</th>
+            </tr>
+          </thead>
+          <tbody id="soak-telemetry-table-body">
+            <!-- Rendered dynamically -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Pane 6: Launcher -->
     <div id="pane-launcher" class="tab-pane">
       <div class="form-panel">
         <h3 style="margin-bottom:16px;">跨游戏自动化任务 / 任务链下发</h3>
@@ -407,7 +504,7 @@
       activeTab = tab;
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
       document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
-      const activeBtn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.innerText.includes(tab) || (tab === 'instances' && b.innerText.includes('实例')) || (tab === 'teams' && b.innerText.includes('组队')) || (tab === 'proxies' && b.innerText.includes('代理')) || (tab === 'accounts' && b.innerText.includes('账号')) || (tab === 'launcher' && b.innerText.includes('启动器')));
+      const activeBtn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.innerText.includes(tab) || (tab === 'instances' && b.innerText.includes('实例')) || (tab === 'teams' && b.innerText.includes('组队')) || (tab === 'proxies' && b.innerText.includes('代理')) || (tab === 'accounts' && b.innerText.includes('账号')) || (tab === 'soak' && b.innerText.includes('压测')) || (tab === 'launcher' && b.innerText.includes('启动器')));
       if (activeBtn) activeBtn.classList.add('active');
       const pane = document.getElementById(`pane-${tab}`);
       if (pane) pane.classList.add('active');
@@ -415,13 +512,15 @@
 
     async function refreshAll() {
       try {
-        const [statusRes, clusterRes, instsRes, teamsRes, proxiesRes, accsRes] = await Promise.all([
+        const [statusRes, clusterRes, instsRes, teamsRes, proxiesRes, accsRes, soakRes, telemRes] = await Promise.all([
           fetch('/api/v1/status').then(r => r.json()).catch(() => ({})),
           fetch('/api/v1/cluster/status').then(r => r.json()).catch(() => ({})),
           fetch('/api/v1/cluster/instances').then(r => r.json()).catch(() => []),
           fetch('/api/v1/cluster/teams').then(r => r.json()).catch(() => ({ teams: [] })),
           fetch('/api/v1/cluster/proxies').then(r => r.json()).catch(() => ({ proxies: [] })),
-          fetch('/api/v1/cluster/accounts').then(r => r.json()).catch(() => ({ accounts: [] }))
+          fetch('/api/v1/cluster/accounts').then(r => r.json()).catch(() => ({ accounts: [] })),
+          fetch('/api/v1/soak/status').then(r => r.json()).catch(() => ({})),
+          fetch('/api/v1/soak/telemetry?limit=20').then(r => r.json()).catch(() => ({ samples: [] }))
         ]);
 
         if (statusRes.platform) {
@@ -433,6 +532,7 @@
         renderTeams(teamsRes.teams || []);
         renderProxies(proxiesRes.proxies || []);
         renderAccounts(accsRes.accounts || []);
+        renderSoak(soakRes, telemRes.samples || []);
       } catch (e) {
         console.error("Refresh error:", e);
       }
@@ -641,6 +741,199 @@
           </tr>
         `;
       }).join('');
+    }
+
+    // 24h Soak Test & Stress Testing
+    let currentSoakIsRunning = false;
+
+    function formatDuration(sec) {
+      if (!sec || isNaN(sec)) return "00h 00m 00s";
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      const s = Math.floor(sec % 60);
+      return `${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}m ${String(s).padStart(2, '0')}s`;
+    }
+
+    function renderSoak(status, samples) {
+      if (!status) return;
+      currentSoakIsRunning = !!status.is_running;
+      const toggleBtn = document.getElementById('btn-soak-toggle');
+      const badge = document.getElementById('soak-status-badge');
+      
+      if (currentSoakIsRunning) {
+        toggleBtn.className = 'danger';
+        toggleBtn.innerText = '⏹ 停止压测进程';
+        badge.className = 'badge badge-green';
+        badge.innerText = 'RUNNING (长稳运行中)';
+      } else {
+        toggleBtn.className = 'primary';
+        toggleBtn.innerText = '▶ 启动 24h 压测';
+        badge.className = 'badge badge-slate';
+        badge.innerText = 'IDLE (空闲就绪)';
+      }
+
+      document.getElementById('soak-runtime-val').innerText = formatDuration(status.elapsed_sec || 0);
+      document.getElementById('soak-pid-val').innerText = status.pid ? String(status.pid) : '--';
+      document.getElementById('soak-samples-val').innerText = status.total_samples || (samples ? samples.length : 0);
+
+      document.getElementById('soak-rss-val').innerText = status.current_rss_mb ? `${status.current_rss_mb} MB` : '-- MB';
+      document.getElementById('soak-base-rss-val').innerText = status.baseline_rss_mb ? `${status.baseline_rss_mb} MB` : '-- MB';
+      
+      const drift = status.memory_drift_pct != null ? status.memory_drift_pct : 0.0;
+      const driftEl = document.getElementById('soak-drift-val');
+      const driftBadge = document.getElementById('soak-drift-badge');
+      driftEl.innerText = `${drift >= 0 ? '+' : ''}${drift.toFixed(2)}%`;
+      if (Math.abs(drift) <= 5.0) {
+        driftEl.style.color = 'var(--emerald)';
+        driftBadge.className = 'badge badge-green';
+        driftBadge.innerText = 'SLA 达标 (≤5%)';
+      } else {
+        driftEl.style.color = 'var(--rose)';
+        driftBadge.className = 'badge badge-red';
+        driftBadge.innerText = 'SLA 漂移超限';
+      }
+
+      document.getElementById('soak-ops-val').innerText = `${(status.completed_ops || 0).toLocaleString()} ops`;
+      document.getElementById('soak-faults-val').innerText = status.faults_recovered || 0;
+      document.getElementById('soak-deadlocks-val').innerText = status.deadlocks_detected || 0;
+
+      // Render Telemetry Table
+      const tbody = document.getElementById('soak-telemetry-table-body');
+      if (!samples || samples.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:24px;">暂无时序遥测采样数据。启动压测或等待时序采集写入。</td></tr>';
+        return;
+      }
+
+      const baselineRss = status.baseline_rss_mb || (samples[0] ? samples[0].rss_mb : 100);
+      tbody.innerHTML = samples.slice().reverse().map(s => {
+        const timeStr = new Date(s.timestamp * 1000).toLocaleTimeString();
+        const diff = s.rss_mb - baselineRss;
+        const diffPct = (diff / Math.max(baselineRss, 1)) * 100;
+        const color = Math.abs(diffPct) > 5 ? 'var(--rose)' : 'var(--emerald)';
+        return `
+          <tr>
+            <td><strong style="color:#fff;">${timeStr}</strong></td>
+            <td>${formatDuration(s.elapsed_sec)}</td>
+            <td><strong style="color:${color};">${s.rss_mb.toFixed(2)} MB</strong> <span style="font-size:0.75rem; color:var(--text-muted);">(${diff >= 0 ? '+' : ''}${diff.toFixed(2)} MB)</span></td>
+            <td><span class="badge badge-cyan">${s.active_instances} 节点</span></td>
+            <td>${s.completed_tasks}</td>
+            <td><span style="color:var(--emerald);">${s.faults_recovered} 次自愈</span></td>
+            <td><span style="color:${s.deadlocks_detected > 0 ? 'var(--rose)' : 'var(--text-muted)'};">${s.deadlocks_detected}</span></td>
+            <td style="min-width:120px;">
+              <div class="bar-container">
+                <div class="bar-fill" style="width:100%; background:${color};"></div>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    async function toggleSoakTest() {
+      if (currentSoakIsRunning) {
+        if (!confirm("确定停止后台 24h 压测守护进程吗？")) return;
+        try {
+          const res = await fetch('/api/v1/soak/stop', { method: 'POST' }).then(r => r.json());
+          showToast(`压测守护进程已停止 (PID: ${res.pid})`);
+          refreshAll();
+        } catch (e) {
+          showToast("停止压测失败: " + e.message, true);
+        }
+      } else {
+        const hours = prompt("请输入压测时长 (小时):", "24");
+        if (!hours) return;
+        try {
+          const res = await fetch('/api/v1/soak/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              duration_hours: parseFloat(hours),
+              instances: 5,
+              device_type: 'virtual',
+              inject_faults: true,
+              enable_cv_stress: true
+            })
+          }).then(r => r.json());
+          showToast(`24h 极限压测已启动，PID: ${res.pid}`);
+          refreshAll();
+        } catch (e) {
+          showToast("启动压测失败: " + e.message, true);
+        }
+      }
+    }
+
+    async function triggerApiStressModal() {
+      const concurrency = parseInt(prompt("请输入并发客户端数 (默认 15 并发):", "15")) || 15;
+      const totalReqs = parseInt(prompt("请输入总请求量 (默认 300 请求):", "300")) || 300;
+      showToast(`正在发起高并发 API 打压 (${totalReqs} reqs, c=${concurrency})... 请稍候`);
+      try {
+        const res = await fetch('/api/v1/stress/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            concurrency: concurrency,
+            requests: totalReqs,
+            p95_threshold_ms: 500.0,
+            in_process: false
+          })
+        }).then(r => r.json());
+
+        // Update UI
+        document.getElementById('stress-qps-val').innerText = `${res.qps.toFixed(2)} QPS`;
+        document.getElementById('stress-p95-val').innerText = `${res.overall_p95_ms.toFixed(1)} ms`;
+        document.getElementById('stress-p99-val').innerText = `${res.overall_p99_ms.toFixed(1)} ms`;
+        
+        const qpsBadge = document.getElementById('stress-qps-badge');
+        if (res.passed_sla) {
+          qpsBadge.className = 'badge badge-green';
+          qpsBadge.innerText = 'SLA 达成 (QPS > 500)';
+        } else {
+          qpsBadge.className = 'badge badge-amber';
+          qpsBadge.innerText = 'SLA 警告';
+        }
+
+        // Render result box
+        const resultBox = document.getElementById('stress-result-box');
+        resultBox.style.display = 'block';
+        const tag = document.getElementById('stress-sla-tag');
+        tag.className = res.passed_sla ? 'badge badge-green' : 'badge badge-red';
+        tag.innerText = res.passed_sla ? `SLA 100% 达成 (${res.total_success}/${res.total_requests})` : `存在违规 (${res.sla_violations.join('; ')})`;
+
+        const epTable = document.getElementById('stress-endpoint-table');
+        let rows = '';
+        for (const [ep, m] of Object.entries(res.endpoints || {})) {
+          rows += `
+            <tr>
+              <td><strong style="color:var(--cyan);">${ep}</strong></td>
+              <td>${m.total}</td>
+              <td><span style="color:var(--emerald);">${m.success_rate_pct}%</span></td>
+              <td>${m.mean_ms} ms</td>
+              <td>${m.p50_ms} ms</td>
+              <td><strong>${m.p95_ms} ms</strong></td>
+              <td>${m.p99_ms} ms</td>
+            </tr>
+          `;
+        }
+        epTable.innerHTML = `
+          <table>
+            <thead>
+              <tr>
+                <th>端点 Path</th>
+                <th>总请求</th>
+                <th>成功率</th>
+                <th>平均响应</th>
+                <th>P50 延迟</th>
+                <th>P95 延迟 (SLA)</th>
+                <th>P99 延迟</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        `;
+        showToast(`打压评测完成！QPS: ${res.qps.toFixed(1)}, P95: ${res.overall_p95_ms.toFixed(1)}ms`);
+      } catch (e) {
+        showToast("发起打压测试失败: " + e.message, true);
+      }
     }
 
     // Plugin & Pipeline Loading
