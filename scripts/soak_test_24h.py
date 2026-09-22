@@ -259,7 +259,7 @@ class SoakTestRunner:
             while not self._stop_event.is_set():
                 now = time.time()
                 elapsed = now - start_time
-                if elapsed >= self.duration_sec:
+                if elapsed >= self.duration_sec and step > 0:
                     logger.info("Target soak test duration reached.")
                     break
 

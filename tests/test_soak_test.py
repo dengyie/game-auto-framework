@@ -14,8 +14,8 @@ def test_get_current_rss_mb():
 def test_soak_test_runner_smoke_execution(tmp_path: Path):
     report_file = tmp_path / "smoke_soak_report.json"
     runner = SoakTestRunner(
-        duration_hours=0.0005,  # ~1.8 seconds
-        sample_interval_sec=0.3,
+        duration_hours=0.001,  # ~3.6 seconds
+        sample_interval_sec=0.2,
         num_instances=5,
         device_type="virtual",
         inject_faults=False,

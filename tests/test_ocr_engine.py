@@ -28,13 +28,23 @@ def test_ocr_engine_synthetic_text():
     draw = ImageDraw.Draw(img)
 
     font = None
-    for candidate in [
+    has_chinese_font = False
+    chinese_font_candidates = [
         "/System/Library/Fonts/Supplemental/Songti.ttc",
         "/System/Library/Fonts/PingFang.ttc",
+        "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+        "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    ]
+    all_candidates = chinese_font_candidates + [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    ]:
+    ]
+
+    for candidate in all_candidates:
         try:
             font = ImageFont.truetype(candidate, 36)
+            if candidate in chinese_font_candidates:
+                has_chinese_font = True
             break
         except Exception:
             continue
@@ -46,7 +56,7 @@ def test_ocr_engine_synthetic_text():
     engine = OCREngine.get_instance()
 
     res_shimen = engine.find_text(frame, "师门", threshold=60.0)
-    if not engine.is_mock and font is not None:
+    if not engine.is_mock and font is not None and has_chinese_font:
         assert res_shimen is not None
         assert "师门" in res_shimen.text
 
