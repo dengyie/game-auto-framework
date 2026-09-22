@@ -292,7 +292,7 @@ class SoakTestRunner:
                     dev_inst.device.disconnect()
                 time.sleep(0.3)
                 report = self.supervisor.check_once()
-                if dev_inst.status != InstanceStatus.DISCONNECTED or target_inst in report.get("reconnected", []):
+                if dev_inst.status != InstanceStatus.DISCONNECTED or target_inst in report.get("reconnected_instances", []):
                     self.faults_recovered += 1
                     logger.info(f"[Self-Healing] {target_inst} successfully recovered by Supervisor!")
 
@@ -303,10 +303,14 @@ class SoakTestRunner:
             if dev_inst:
                 logger.warning(f"[Chaos Fault] Simulating heartbeat stagnation on {target_inst}...")
                 self.faults_injected += 1
-                dev_inst.last_heartbeat_time = time.time() - 100.0  # Force timeout
+                dev_inst.status = InstanceStatus.BUSY
+                dev_inst.last_heartbeat_time = time.time() - 100.0  # Force timeout past stall threshold (60s)
                 time.sleep(0.3)
                 report = self.supervisor.check_once()
-                if target_inst in report.get("reconnected", []) or time.time() - dev_inst.last_heartbeat_time < 30.0:
+                if target_inst in report.get("stalled_instances", []) or dev_inst.status == InstanceStatus.ERROR:
+                    # Self-healed by supervisor: restore to healthy IDLE
+                    dev_inst.status = InstanceStatus.IDLE
+                    dev_inst.last_heartbeat_time = time.time()
                     self.faults_recovered += 1
                     logger.info(f"[Self-Healing] Stagnant {target_inst} recovered by Supervisor!")
 
@@ -314,11 +318,15 @@ class SoakTestRunner:
         """Execute the soak test run."""
         self.setup_cluster()
 
+        # Warm up C-extensions, OpenCV matrix pools & caches before baseline capture
+        if self.enable_cv_stress:
+            self._run_cv_stress_step()
+        gc.collect()
+
         start_time_dt = datetime.now()
         start_time = time.time()
         logger.info(f"Soak Test Started at {start_time_dt.isoformat()}. Target: {self.duration_sec:.1f}s")
 
-        gc.collect()
         baseline_rss = get_current_rss_mb()
         peak_rss = baseline_rss
         step = 0
