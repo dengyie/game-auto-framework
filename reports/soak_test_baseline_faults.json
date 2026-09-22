@@ -1,0 +1,472 @@
+{
+  "summary": {
+    "start_time": "2026-09-23T06:16:17.833934",
+    "end_time": "2026-09-23T06:16:54.074415",
+    "target_duration_sec": 36.0,
+    "actual_duration_sec": 36.24,
+    "baseline_rss_mb": 82.22,
+    "peak_rss_mb": 82.22,
+    "final_rss_mb": 82.22,
+    "memory_drift_pct": 0.0,
+    "total_samples": 71,
+    "total_tasks_completed": 355,
+    "total_faults_injected": 1,
+    "total_faults_recovered": 1,
+    "deadlocks_detected": 0,
+    "proxy_violations": 0,
+    "passed_sla": true,
+    "sla_violations": []
+  },
+  "samples_tail": [
+    {
+      "timestamp": 1790115388.419657,
+      "elapsed_sec": 10.59,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 110,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115388.9241521,
+      "elapsed_sec": 11.09,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 115,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115389.427721,
+      "elapsed_sec": 11.59,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 120,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115389.9326222,
+      "elapsed_sec": 12.1,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 125,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115390.437943,
+      "elapsed_sec": 12.6,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 130,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115390.940128,
+      "elapsed_sec": 13.11,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 135,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115391.441358,
+      "elapsed_sec": 13.61,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 140,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115391.9451442,
+      "elapsed_sec": 14.11,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 145,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115392.4468338,
+      "elapsed_sec": 14.61,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 150,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115392.951699,
+      "elapsed_sec": 15.12,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 155,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115393.453591,
+      "elapsed_sec": 15.62,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 160,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115393.955845,
+      "elapsed_sec": 16.12,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 165,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115394.46001,
+      "elapsed_sec": 16.63,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 170,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115394.9607491,
+      "elapsed_sec": 17.13,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 175,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115395.465964,
+      "elapsed_sec": 17.63,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 180,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115395.971154,
+      "elapsed_sec": 18.14,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 185,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115396.476647,
+      "elapsed_sec": 18.64,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 190,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115396.979226,
+      "elapsed_sec": 19.15,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 195,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115397.4800022,
+      "elapsed_sec": 19.65,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 200,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115397.980334,
+      "elapsed_sec": 20.15,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 205,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115398.484292,
+      "elapsed_sec": 20.65,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 210,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115398.985934,
+      "elapsed_sec": 21.15,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 215,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115399.4906838,
+      "elapsed_sec": 21.66,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 220,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115399.994153,
+      "elapsed_sec": 22.16,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 225,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115400.495119,
+      "elapsed_sec": 22.66,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 230,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115400.998966,
+      "elapsed_sec": 23.17,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 235,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115401.502136,
+      "elapsed_sec": 23.67,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 240,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115402.004618,
+      "elapsed_sec": 24.17,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 245,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115402.5108778,
+      "elapsed_sec": 24.68,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 250,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115403.015079,
+      "elapsed_sec": 25.18,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 255,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115403.517596,
+      "elapsed_sec": 25.68,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 260,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115404.0183759,
+      "elapsed_sec": 26.18,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 265,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115404.521597,
+      "elapsed_sec": 26.69,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 270,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115405.023516,
+      "elapsed_sec": 27.19,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 275,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115405.525959,
+      "elapsed_sec": 27.69,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 280,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115406.0289211,
+      "elapsed_sec": 28.19,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 285,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115406.532322,
+      "elapsed_sec": 28.7,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 290,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115407.0331268,
+      "elapsed_sec": 29.2,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 295,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115407.53506,
+      "elapsed_sec": 29.7,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 300,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115408.0386071,
+      "elapsed_sec": 30.2,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 305,
+      "faults_recovered": 1,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115409.043843,
+      "elapsed_sec": 31.21,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 310,
+      "faults_recovered": 1,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115409.5445728,
+      "elapsed_sec": 31.71,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 315,
+      "faults_recovered": 1,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115410.045131,
+      "elapsed_sec": 32.21,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 320,
+      "faults_recovered": 1,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115410.549952,
+      "elapsed_sec": 32.72,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 325,
+      "faults_recovered": 1,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115411.055088,
+      "elapsed_sec": 33.22,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 330,
+      "faults_recovered": 1,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115411.556394,
+      "elapsed_sec": 33.72,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 335,
+      "faults_recovered": 1,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115412.060202,
+      "elapsed_sec": 34.23,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 340,
+      "faults_recovered": 1,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115412.5648599,
+      "elapsed_sec": 34.73,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 345,
+      "faults_recovered": 1,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115413.070009,
+      "elapsed_sec": 35.24,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 350,
+      "faults_recovered": 1,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115413.572704,
+      "elapsed_sec": 35.74,
+      "rss_mb": 82.22,
+      "active_instances": 5,
+      "completed_tasks": 355,
+      "faults_recovered": 1,
+      "deadlocks_detected": 0
+    }
+  ]
+}

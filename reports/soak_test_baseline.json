@@ -1,0 +1,184 @@
+{
+  "summary": {
+    "start_time": "2026-09-23T06:15:26.040826",
+    "end_time": "2026-09-23T06:16:02.087526",
+    "target_duration_sec": 36.0,
+    "actual_duration_sec": 36.05,
+    "baseline_rss_mb": 82.3,
+    "peak_rss_mb": 82.3,
+    "final_rss_mb": 82.3,
+    "memory_drift_pct": 0.0,
+    "total_samples": 18,
+    "total_tasks_completed": 90,
+    "total_faults_injected": 0,
+    "total_faults_recovered": 0,
+    "deadlocks_detected": 0,
+    "proxy_violations": 0,
+    "passed_sla": true,
+    "sla_violations": []
+  },
+  "samples_tail": [
+    {
+      "timestamp": 1790115326.0449002,
+      "elapsed_sec": 0.0,
+      "rss_mb": 82.3,
+      "active_instances": 5,
+      "completed_tasks": 5,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115328.045181,
+      "elapsed_sec": 2.0,
+      "rss_mb": 82.3,
+      "active_instances": 5,
+      "completed_tasks": 10,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115330.045554,
+      "elapsed_sec": 4.0,
+      "rss_mb": 82.3,
+      "active_instances": 5,
+      "completed_tasks": 15,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115332.046769,
+      "elapsed_sec": 6.01,
+      "rss_mb": 82.3,
+      "active_instances": 5,
+      "completed_tasks": 20,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115334.048521,
+      "elapsed_sec": 8.01,
+      "rss_mb": 82.3,
+      "active_instances": 5,
+      "completed_tasks": 25,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115336.051548,
+      "elapsed_sec": 10.01,
+      "rss_mb": 82.3,
+      "active_instances": 5,
+      "completed_tasks": 30,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115338.0582342,
+      "elapsed_sec": 12.02,
+      "rss_mb": 82.3,
+      "active_instances": 5,
+      "completed_tasks": 35,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115340.059534,
+      "elapsed_sec": 14.02,
+      "rss_mb": 82.3,
+      "active_instances": 5,
+      "completed_tasks": 40,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115342.060676,
+      "elapsed_sec": 16.02,
+      "rss_mb": 82.3,
+      "active_instances": 5,
+      "completed_tasks": 45,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115344.064349,
+      "elapsed_sec": 18.02,
+      "rss_mb": 82.3,
+      "active_instances": 5,
+      "completed_tasks": 50,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115346.067789,
+      "elapsed_sec": 20.03,
+      "rss_mb": 82.3,
+      "active_instances": 5,
+      "completed_tasks": 55,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115348.070417,
+      "elapsed_sec": 22.03,
+      "rss_mb": 82.3,
+      "active_instances": 5,
+      "completed_tasks": 60,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115350.072302,
+      "elapsed_sec": 24.03,
+      "rss_mb": 82.3,
+      "active_instances": 5,
+      "completed_tasks": 65,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115352.077664,
+      "elapsed_sec": 26.04,
+      "rss_mb": 82.3,
+      "active_instances": 5,
+      "completed_tasks": 70,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115354.0786629,
+      "elapsed_sec": 28.04,
+      "rss_mb": 82.3,
+      "active_instances": 5,
+      "completed_tasks": 75,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115356.081026,
+      "elapsed_sec": 30.04,
+      "rss_mb": 82.3,
+      "active_instances": 5,
+      "completed_tasks": 80,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115358.0823848,
+      "elapsed_sec": 32.04,
+      "rss_mb": 82.3,
+      "active_instances": 5,
+      "completed_tasks": 85,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    },
+    {
+      "timestamp": 1790115360.084152,
+      "elapsed_sec": 34.04,
+      "rss_mb": 82.3,
+      "active_instances": 5,
+      "completed_tasks": 90,
+      "faults_recovered": 0,
+      "deadlocks_detected": 0
+    }
+  ]
+}
