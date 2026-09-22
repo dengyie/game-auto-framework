@@ -351,6 +351,7 @@ def stop_task() -> Dict[str, Any]:
 
 
 @app.get("/api/v1/screenshot")
+@app.head("/api/v1/screenshot")
 def get_screenshot() -> Response:
     """Fetch live screenshot frame from active device."""
     if not GLOBAL_TASK.device:
@@ -400,6 +401,7 @@ def _generate_mjpeg_frames(instance_id: Optional[str] = None, fps: float = 10.0)
 
 
 @app.get("/api/v1/stream")
+@app.head("/api/v1/stream")
 def stream_video(instance_id: Optional[str] = None, fps: float = 10.0) -> StreamingResponse:
     """Stream live MJPEG video frames from active task or a specific cluster instance."""
     return StreamingResponse(
@@ -651,6 +653,7 @@ def unregister_instance(instance_id: str) -> Dict[str, Any]:
 
 
 @app.get("/api/v1/cluster/instances/{instance_id}/screenshot")
+@app.head("/api/v1/cluster/instances/{instance_id}/screenshot")
 def get_instance_screenshot(instance_id: str) -> Response:
     """Capture screenshot frame from a specific cluster instance."""
     inst = CLUSTER_POOL.get_instance(instance_id)
@@ -664,6 +667,7 @@ def get_instance_screenshot(instance_id: str) -> Response:
 
 
 @app.get("/api/v1/cluster/instances/{instance_id}/stream")
+@app.head("/api/v1/cluster/instances/{instance_id}/stream")
 def stream_instance_video(instance_id: str, fps: float = 10.0) -> StreamingResponse:
     """Stream live MJPEG video frames from a specific cluster instance."""
     inst = CLUSTER_POOL.get_instance(instance_id)
