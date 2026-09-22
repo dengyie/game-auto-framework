@@ -1,0 +1,100 @@
+{
+  "name": "fuben_320_520",
+  "entry": "check_activity_entry",
+  "nodes": [
+    {
+      "name": "check_activity_entry",
+      "recognition": {
+        "type": "always"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "click_open_activity"
+      },
+      "next": ["select_fuben"],
+      "timeout_sec": 15.0
+    },
+    {
+      "name": "select_fuben",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "find_fuben_entry"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "click_enter_fuben"
+      },
+      "next": ["handle_fuben_dialog"],
+      "timeout_sec": 20.0
+    },
+    {
+      "name": "handle_fuben_dialog",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "is_fuben_dialog_active"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "click_skip_fuben_dialog"
+      },
+      "next": ["wait_fuben_battle"],
+      "timeout_sec": 20.0
+    },
+    {
+      "name": "wait_fuben_battle",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "is_fuben_in_battle"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "handle_fuben_combat",
+        "duration": 0.1
+      },
+      "next": ["fuben_battle_conclude"],
+      "timeout_sec": 60.0
+    },
+    {
+      "name": "fuben_battle_conclude",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "is_fuben_battle_ended"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "advance_fuben_stage"
+      },
+      "branches": [
+        {
+          "condition": "variables.get('fuben_settlement_ready', False)",
+          "next": "fuben_settlement"
+        }
+      ],
+      "next": ["handle_fuben_dialog"],
+      "timeout_sec": 20.0
+    },
+    {
+      "name": "fuben_settlement",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "is_fuben_settlement_ready"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "click_fuben_settlement"
+      },
+      "next": ["fuben_finish"],
+      "timeout_sec": 20.0
+    },
+    {
+      "name": "fuben_finish",
+      "recognition": {
+        "type": "always"
+      },
+      "action": {
+        "type": "none"
+      },
+      "is_terminal": true
+    }
+  ]
+}

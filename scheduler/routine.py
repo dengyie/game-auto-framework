@@ -55,14 +55,34 @@ class TaskRoutineExecutor:
         """Resolve common shorthand names to actual pipeline names loaded in the plugin."""
         resolved = []
         available = set(self.plugin.pipelines.keys())
+        alias_map = {
+            "shimen": "daily_shimen",
+            "baotu": "daily_baotu",
+            "yuntong": "daily_yuntong",
+            "zhuogui": "team_zhuogui",
+            "team": "team_zhuogui",
+            "ghost": "team_zhuogui",
+            "fuben": "fuben_320_520",
+            "fuben_320": "fuben_320_520",
+            "fuben_520": "fuben_320_520",
+            "dungeon": "fuben_320_520",
+            "kaogu": "gongfang_kaogu",
+            "archaeology": "gongfang_kaogu",
+            "huoli": "huoli_shanghui",
+            "shanghui": "huoli_shanghui",
+            "commerce": "huoli_shanghui",
+        }
         for name in pipeline_names:
-            if name in available:
-                resolved.append(name)
+            target = alias_map.get(name, name)
+            if target in available:
+                resolved.append(target)
             elif f"daily_{name}" in available:
                 resolved.append(f"daily_{name}")
+            elif name in available:
+                resolved.append(name)
             else:
                 # Keep as requested; will be validated on start
-                resolved.append(name)
+                resolved.append(target)
         return resolved
 
     @property
@@ -117,6 +137,25 @@ class TaskRoutineExecutor:
                 f"(threshold={self.config.max_anti_bot_fails})"
             )
             logger.critical(self.error_message)
+
+            # Dispatch Webhook alert across configured channels
+            try:
+                from core.notify.webhook import WebhookNotifier
+                dev_name = getattr(self.plugin.device, "name", "device")
+                frame = None
+                try:
+                    frame = self.plugin.device.screencap(raw=True) if hasattr(self.plugin.device, "screencap") else None
+                except Exception:
+                    pass
+                WebhookNotifier.get_instance().send_circuit_breaker_alert(
+                    device_name=dev_name,
+                    routine_name=self.config.name,
+                    reason=self.error_message,
+                    image_bytes=frame,
+                )
+            except Exception as e:
+                logger.debug(f"Webhook alert trigger error ignored: {e}")
+
             return self.status
 
         # 2. Check if all pipelines finished

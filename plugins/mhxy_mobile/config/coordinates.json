@@ -43,5 +43,46 @@
     "option_2": [680, 360, 180, 40],
     "option_3": [420, 430, 180, 40],
     "option_4": [680, 430, 180, 40]
+  },
+  "team": {
+    "btn_team_top": [1120, 240, 120, 35],
+    "btn_create_team": [980, 600, 100, 40],
+    "btn_auto_match": [850, 600, 100, 40],
+    "btn_join_team": [1050, 600, 90, 35],
+    "btn_leave_team": [150, 640, 90, 35],
+    "btn_kick_member": [750, 350, 60, 25]
+  },
+  "zhuogui": {
+    "btn_talk_zhongkui": [930, 430, 80, 30],
+    "btn_accept_ghost": [930, 430, 80, 30],
+    "btn_double_points": [1020, 280, 80, 30],
+    "btn_confirm_double": [640, 450, 90, 35]
+  },
+  "fuben": {
+    "btn_select_fuben_320": [450, 280, 120, 40],
+    "btn_select_fuben_520": [600, 280, 120, 40],
+    "btn_enter_fuben": [930, 580, 110, 40],
+    "btn_skip_dialog": [1120, 580, 80, 30],
+    "btn_fuben_settlement": [640, 580, 120, 45]
+  },
+  "kaogu": {
+    "btn_buy_shovel": [880, 520, 70, 30],
+    "btn_shovel_slot": [920, 220, 50, 50],
+    "btn_use_shovel": [720, 520, 80, 35],
+    "btn_compass_spin": [640, 360, 100, 100],
+    "btn_appraise_relic": [720, 480, 80, 35],
+    "btn_sell_fake": [820, 480, 80, 35]
+  },
+  "huoli": {
+    "btn_skill_panel": [1080, 640, 45, 45],
+    "btn_aux_skills": [240, 120, 80, 35],
+    "btn_quick_work": [920, 580, 100, 40],
+    "btn_cook_alchemy": [780, 580, 100, 40]
+  },
+  "shanghui": {
+    "btn_shop_tab": [1080, 40, 45, 45],
+    "btn_shanghui_tab": [220, 120, 80, 35],
+    "btn_batch_sell": [1020, 600, 110, 40],
+    "btn_confirm_sell": [640, 480, 90, 35]
   }
 }

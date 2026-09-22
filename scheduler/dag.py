@@ -92,9 +92,11 @@ class PipelineContext:
         if not expr:
             return True
         try:
-            # Provide self.variables as local namespace for the expression
+            # Provide self.variables and 'variables' alias in local namespace for the expression
             safe_globals = {"__builtins__": {}}
-            return bool(eval(expr, safe_globals, self.variables))
+            locals_dict = dict(self.variables)
+            locals_dict["variables"] = self.variables
+            return bool(eval(expr, safe_globals, locals_dict))
         except Exception as e:
             logger.debug(f"Condition evaluation error for '{expr}': {e}")
             return False

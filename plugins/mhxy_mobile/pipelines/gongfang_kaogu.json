@@ -1,0 +1,118 @@
+{
+  "name": "gongfang_kaogu",
+  "entry": "check_shovel_stock",
+  "nodes": [
+    {
+      "name": "check_shovel_stock",
+      "recognition": {
+        "type": "always"
+      },
+      "action": {
+        "type": "none"
+      },
+      "branches": [
+        {
+          "condition": "variables.get('shovel_count', 0) <= 0",
+          "next": "buy_shovels"
+        }
+      ],
+      "next": ["use_shovel_to_navigate"],
+      "timeout_sec": 15.0
+    },
+    {
+      "name": "buy_shovels",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "needs_shovels"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "click_buy_shovels"
+      },
+      "next": ["use_shovel_to_navigate"],
+      "timeout_sec": 20.0
+    },
+    {
+      "name": "use_shovel_to_navigate",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "has_shovels"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "click_use_shovel"
+      },
+      "next": ["wait_reach_tomb"],
+      "timeout_sec": 25.0
+    },
+    {
+      "name": "wait_reach_tomb",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "is_tomb_reached"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "trigger_compass_dig"
+      },
+      "next": ["handle_dig_outcome"],
+      "timeout_sec": 20.0
+    },
+    {
+      "name": "handle_dig_outcome",
+      "recognition": {
+        "type": "always"
+      },
+      "action": {
+        "type": "none"
+      },
+      "branches": [
+        {
+          "condition": "variables.get('in_thief_battle', False)",
+          "next": "fight_tomb_thief"
+        },
+        {
+          "condition": "variables.get('shovel_count', 0) > 0 and variables.get('digs_completed', 0) < variables.get('max_digs', 5)",
+          "next": "use_shovel_to_navigate"
+        }
+      ],
+      "next": ["appraise_relics"],
+      "timeout_sec": 15.0
+    },
+    {
+      "name": "fight_tomb_thief",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "is_thief_battle_active"
+      },
+      "action": {
+        "type": "wait",
+        "duration": 0.5
+      },
+      "next": ["appraise_relics"],
+      "timeout_sec": 60.0
+    },
+    {
+      "name": "appraise_relics",
+      "recognition": {
+        "type": "always"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "click_appraise_and_sell"
+      },
+      "next": ["kaogu_finish"],
+      "timeout_sec": 20.0
+    },
+    {
+      "name": "kaogu_finish",
+      "recognition": {
+        "type": "always"
+      },
+      "action": {
+        "type": "none"
+      },
+      "is_terminal": true
+    }
+  ]
+}

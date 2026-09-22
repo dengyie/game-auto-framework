@@ -1,0 +1,71 @@
+{
+  "name": "huoli_shanghui",
+  "entry": "check_huoli_level",
+  "nodes": [
+    {
+      "name": "check_huoli_level",
+      "recognition": {
+        "type": "always"
+      },
+      "action": {
+        "type": "none"
+      },
+      "branches": [
+        {
+          "condition": "variables.get('current_huoli', 0) >= variables.get('min_huoli_threshold', 300)",
+          "next": "consume_huoli"
+        }
+      ],
+      "next": ["open_shanghui"],
+      "timeout_sec": 15.0
+    },
+    {
+      "name": "consume_huoli",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "check_huoli_sufficient"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "execute_huoli_work"
+      },
+      "next": ["open_shanghui"],
+      "timeout_sec": 20.0
+    },
+    {
+      "name": "open_shanghui",
+      "recognition": {
+        "type": "always"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "click_open_shanghui"
+      },
+      "next": ["sell_items"],
+      "timeout_sec": 20.0
+    },
+    {
+      "name": "sell_items",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "has_items_to_sell"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "click_batch_sell"
+      },
+      "next": ["huoli_shanghui_finish"],
+      "timeout_sec": 20.0
+    },
+    {
+      "name": "huoli_shanghui_finish",
+      "recognition": {
+        "type": "always"
+      },
+      "action": {
+        "type": "none"
+      },
+      "is_terminal": true
+    }
+  ]
+}

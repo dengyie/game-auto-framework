@@ -1,0 +1,190 @@
+{
+  "name": "team_zhuogui",
+  "entry": "check_team_status",
+  "nodes": [
+    {
+      "name": "check_team_status",
+      "recognition": {
+        "type": "always"
+      },
+      "action": {
+        "type": "none"
+      },
+      "branches": [
+        {
+          "condition": "variables.get('team_role') == 'member'",
+          "next": "member_find_team"
+        },
+        {
+          "condition": "variables.get('team_member_count', 1) >= 4 and variables.get('is_leader', False)",
+          "next": "leader_check_double"
+        }
+      ],
+      "next": ["leader_open_team_panel"],
+      "timeout_sec": 15.0
+    },
+    {
+      "name": "leader_open_team_panel",
+      "recognition": {
+        "type": "always"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "click_open_team"
+      },
+      "next": ["leader_create_team"],
+      "timeout_sec": 15.0
+    },
+    {
+      "name": "leader_create_team",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "is_team_panel_open"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "click_create_team"
+      },
+      "next": ["leader_auto_match"],
+      "timeout_sec": 15.0
+    },
+    {
+      "name": "leader_auto_match",
+      "recognition": {
+        "type": "always"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "click_auto_match"
+      },
+      "next": ["leader_check_double"],
+      "timeout_sec": 15.0
+    },
+    {
+      "name": "leader_check_double",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "check_double_points"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "click_fetch_double"
+      },
+      "next": ["find_zhongkui_npc"],
+      "timeout_sec": 15.0
+    },
+    {
+      "name": "find_zhongkui_npc",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "find_zhongkui"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "click_talk_zhongkui"
+      },
+      "next": ["accept_ghost_task"],
+      "timeout_sec": 20.0
+    },
+    {
+      "name": "accept_ghost_task",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "is_zhongkui_dialog_open"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "click_accept_ghost"
+      },
+      "next": ["track_ghost_king"],
+      "timeout_sec": 15.0
+    },
+    {
+      "name": "track_ghost_king",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "is_ghost_tracking"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "click_ghost_tracker"
+      },
+      "next": ["wait_ghost_combat"],
+      "timeout_sec": 30.0
+    },
+    {
+      "name": "wait_ghost_combat",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "is_ghost_in_battle"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "handle_ghost_combat",
+        "duration": 0.1
+      },
+      "next": ["ghost_combat_finish"],
+      "timeout_sec": 60.0
+    },
+    {
+      "name": "ghost_combat_finish",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "is_ghost_battle_ended"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "increment_ghost_round"
+      },
+      "branches": [
+        {
+          "condition": "variables.get('zhuogui_rounds', 0) >= variables.get('max_zhuogui_rounds', 10)",
+          "next": "ghost_finish"
+        }
+      ],
+      "next": ["find_zhongkui_npc", "track_ghost_king"],
+      "timeout_sec": 20.0
+    },
+    {
+      "name": "member_find_team",
+      "recognition": {
+        "type": "always"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "apply_join_ghost_team"
+      },
+      "next": ["member_following"],
+      "timeout_sec": 20.0
+    },
+    {
+      "name": "member_following",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "is_following_leader"
+      },
+      "action": {
+        "type": "wait",
+        "duration": 0.5
+      },
+      "branches": [
+        {
+          "condition": "variables.get('zhuogui_rounds', 0) >= variables.get('max_zhuogui_rounds', 10)",
+          "next": "ghost_finish"
+        }
+      ],
+      "next": ["wait_ghost_combat", "member_following"],
+      "timeout_sec": 60.0
+    },
+    {
+      "name": "ghost_finish",
+      "recognition": {
+        "type": "always"
+      },
+      "action": {
+        "type": "none"
+      },
+      "is_terminal": true
+    }
+  ]
+}

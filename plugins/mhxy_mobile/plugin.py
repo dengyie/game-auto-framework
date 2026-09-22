@@ -14,6 +14,7 @@ from core.cv.battle import BattleDetector
 from core.ocr.engine import OCREngine
 from plugins.base import BaseGamePlugin
 from plugins.mhxy_mobile.custom.quiz import QuizSolver
+from plugins.mhxy_mobile.custom import handlers as h
 from scheduler.dag import NodeAction, NodeRecognition, PipelineContext
 
 
@@ -29,6 +30,9 @@ class MHXYMobilePlugin(BaseGamePlugin):
 
     def register_custom_operators(self, context: PipelineContext) -> None:
         """Register domain-specific recognition and action handlers."""
+        # Share coordinates in context
+        context.variables["coordinates"] = self.coordinates
+
         # 1. Shimen Quest Handlers
         context.register_recognition("find_shimen_tracker", self._find_shimen_tracker)
         context.register_action("click_shimen_tracker", self._click_shimen_tracker)
@@ -58,6 +62,58 @@ class MHXYMobilePlugin(BaseGamePlugin):
         # 5. Anti-Bot Popup Handlers
         context.register_recognition("detect_anti_bot_popup", self._detect_anti_bot_popup)
         context.register_action("resolve_anti_bot_popup", self._resolve_anti_bot_popup)
+
+        # 6. Team Ghost Hunting (team_zhuogui) Handlers
+        context.register_recognition("is_team_panel_open", h.is_team_panel_open)
+        context.register_action("click_open_team", h.click_open_team)
+        context.register_action("click_create_team", h.click_create_team)
+        context.register_recognition("is_team_full", h.is_team_full)
+        context.register_action("click_auto_match", h.click_auto_match)
+        context.register_recognition("find_zhongkui", h.find_zhongkui)
+        context.register_action("click_talk_zhongkui", h.click_talk_zhongkui)
+        context.register_recognition("is_zhongkui_dialog_open", h.is_zhongkui_dialog_open)
+        context.register_action("click_accept_ghost", h.click_accept_ghost)
+        context.register_recognition("check_double_points", h.check_double_points)
+        context.register_action("click_fetch_double", h.click_fetch_double)
+        context.register_recognition("is_ghost_tracking", h.is_ghost_tracking)
+        context.register_action("click_ghost_tracker", h.click_ghost_tracker)
+        context.register_recognition("is_ghost_in_battle", h.is_ghost_in_battle)
+        context.register_action("handle_ghost_combat", h.handle_ghost_combat)
+        context.register_recognition("is_ghost_battle_ended", h.is_ghost_battle_ended)
+        context.register_action("increment_ghost_round", h.increment_ghost_round)
+        context.register_action("apply_join_ghost_team", h.apply_join_ghost_team)
+        context.register_recognition("is_following_leader", h.is_following_leader)
+
+        # 7. Dungeons (fuben_320_520) Handlers
+        context.register_recognition("is_activity_open", h.is_activity_open)
+        context.register_action("click_open_activity", h.click_open_activity)
+        context.register_recognition("find_fuben_entry", h.find_fuben_entry)
+        context.register_action("click_enter_fuben", h.click_enter_fuben)
+        context.register_recognition("is_fuben_dialog_active", h.is_fuben_dialog_active)
+        context.register_action("click_skip_fuben_dialog", h.click_skip_fuben_dialog)
+        context.register_recognition("is_fuben_in_battle", h.is_fuben_in_battle)
+        context.register_action("handle_fuben_combat", h.handle_fuben_combat)
+        context.register_recognition("is_fuben_battle_ended", h.is_fuben_battle_ended)
+        context.register_action("advance_fuben_stage", h.advance_fuben_stage)
+        context.register_recognition("is_fuben_settlement_ready", h.is_fuben_settlement_ready)
+        context.register_action("click_fuben_settlement", h.click_fuben_settlement)
+
+        # 8. Workshop Archaeology (gongfang_kaogu) Handlers
+        context.register_recognition("needs_shovels", h.needs_shovels)
+        context.register_action("click_buy_shovels", h.click_buy_shovels)
+        context.register_recognition("has_shovels", h.has_shovels)
+        context.register_action("click_use_shovel", h.click_use_shovel)
+        context.register_recognition("is_tomb_reached", h.is_tomb_reached)
+        context.register_action("trigger_compass_dig", h.trigger_compass_dig)
+        context.register_recognition("is_thief_battle_active", h.is_thief_battle_active)
+        context.register_action("click_appraise_and_sell", h.click_appraise_and_sell)
+
+        # 9. Vigor & Chamber of Commerce (huoli_shanghui) Handlers
+        context.register_recognition("check_huoli_sufficient", h.check_huoli_sufficient)
+        context.register_action("execute_huoli_work", h.execute_huoli_work)
+        context.register_action("click_open_shanghui", h.click_open_shanghui)
+        context.register_recognition("has_items_to_sell", h.has_items_to_sell)
+        context.register_action("click_batch_sell", h.click_batch_sell)
 
     # --- Shimen Handlers ---
 
