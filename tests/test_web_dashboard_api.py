@@ -125,3 +125,49 @@ def test_cluster_team_and_proxy_and_account_lifecycle(client):
     assert del_i_res.status_code == 200
     assert del_i_res.json()["status"] == "unregistered"
     client.delete("/api/v1/cluster/instances/test_inst_dash_02")
+
+
+def test_video_stream_and_device_action_endpoints(client):
+    """Verify GET /api/v1/stream, instance stream, and POST /api/v1/cluster/instances/{id}/action."""
+    # 1. Register test instance
+    client.post("/api/v1/cluster/instances/register", json={"instance_id": "stream_test_inst", "device_type": "virtual"})
+
+    # 2. Test HEAD and GET /
+    head_res = client.head("/")
+    assert head_res.status_code == 200
+
+    head_health = client.head("/health")
+    assert head_health.status_code == 200
+
+    # 3. Test virtual action dispatch (tap, swipe, key)
+    tap_res = client.post(
+        "/api/v1/cluster/instances/stream_test_inst/action",
+        json={"action": "tap", "x": 640, "y": 360},
+    )
+    assert tap_res.status_code == 200
+    assert tap_res.json()["status"] == "ok"
+    assert tap_res.json()["action"] == "tap"
+
+    swipe_res = client.post(
+        "/api/v1/cluster/instances/stream_test_inst/action",
+        json={"action": "swipe", "x": 100, "y": 200, "x2": 500, "y2": 200},
+    )
+    assert swipe_res.status_code == 200
+    assert swipe_res.json()["action"] == "swipe"
+
+    key_res = client.post(
+        "/api/v1/cluster/instances/stream_test_inst/action",
+        json={"action": "key", "keycode": 4},
+    )
+    assert key_res.status_code == 200
+    assert key_res.json()["keycode"] == 4
+
+    # 4. Test instance screenshot
+    shot_res = client.get("/api/v1/cluster/instances/stream_test_inst/screenshot")
+    assert shot_res.status_code == 200
+    assert "image/jpeg" in shot_res.headers["content-type"]
+    assert len(shot_res.content) > 0
+
+    # 5. Clean up
+    client.delete("/api/v1/cluster/instances/stream_test_inst")
+

@@ -15,7 +15,7 @@ import threading
 import time
 from typing import Any, Dict, List, Optional
 from fastapi import FastAPI, HTTPException, Response
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from loguru import logger
 
@@ -127,7 +127,9 @@ INDEX_HTML = STATIC_DIR / "index.html"
 
 
 @app.get("/", response_class=HTMLResponse)
+@app.head("/")
 @app.get("/dashboard", response_class=HTMLResponse)
+@app.head("/dashboard")
 def serve_dashboard() -> HTMLResponse:
     """Serve the embedded modern dark-mode Web Dashboard."""
     if INDEX_HTML.exists():
@@ -164,7 +166,9 @@ def get_plugin_pipelines(plugin_id: str) -> Dict[str, Any]:
 
 
 @app.get("/health")
+@app.head("/health")
 @app.get("/api/v1/status")
+@app.head("/api/v1/status")
 def get_status() -> Dict[str, Any]:
     """Check VPS engine health, operating system, and task state."""
     current_node = None
@@ -362,6 +366,48 @@ def get_screenshot() -> Response:
         raise HTTPException(status_code=500, detail=f"Failed to capture frame: {e}")
 
 
+def _generate_mjpeg_frames(instance_id: Optional[str] = None, fps: float = 10.0):
+    interval = max(0.033, 1.0 / max(1.0, min(fps, 30.0)))
+    while True:
+        frame_bytes = None
+        try:
+            if instance_id:
+                inst = CLUSTER_POOL.get_instance(instance_id)
+                if inst:
+                    frame_bytes = inst.screencap()
+            if not frame_bytes:
+                if GLOBAL_TASK.device:
+                    frame_bytes = GLOBAL_TASK.device.screencap()
+                else:
+                    instances = CLUSTER_POOL.list_instances()
+                    if instances:
+                        frame_bytes = instances[0].screencap()
+                    else:
+                        dev = DeviceFactory.create("virtual")
+                        dev.connect()
+                        frame_bytes = dev.screencap()
+        except Exception as e:
+            logger.debug(f"Frame capture error in stream: {e}")
+            time.sleep(interval)
+            continue
+
+        if frame_bytes:
+            yield (
+                b"--frame\r\n"
+                b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
+            )
+        time.sleep(interval)
+
+
+@app.get("/api/v1/stream")
+def stream_video(instance_id: Optional[str] = None, fps: float = 10.0) -> StreamingResponse:
+    """Stream live MJPEG video frames from active task or a specific cluster instance."""
+    return StreamingResponse(
+        _generate_mjpeg_frames(instance_id=instance_id, fps=fps),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+    )
+
+
 # =====================================================================
 # Milestone 3: Cluster, Multi-Instance, Proxy & Account REST Endpoints
 # =====================================================================
@@ -418,8 +464,9 @@ def init_default_cluster(config_path: Optional[str] = None) -> None:
             inst.connect()
             inst.assigned_account_id = acc.account_id
             inst.pipeline_name = "daily_shimen" if i == 1 else "basic_tasks"
-            inst.pipeline_status = PipelineStatus.RUNNING if i == 1 else PipelineStatus.IDLE
-            inst.status = InstanceStatus.BUSY if i == 1 else InstanceStatus.IDLE
+            inst.pipeline_status = PipelineStatus.IDLE
+            inst.status = InstanceStatus.IDLE
+            inst.heartbeat()
 
             # Bind proxy
             avail = PROXY_MANAGER.get_available_proxy()
@@ -614,6 +661,66 @@ def get_instance_screenshot(instance_id: str) -> Response:
         return Response(content=data, media_type="image/jpeg")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Screenshot failed on [{instance_id}]: {e}")
+
+
+@app.get("/api/v1/cluster/instances/{instance_id}/stream")
+def stream_instance_video(instance_id: str, fps: float = 10.0) -> StreamingResponse:
+    """Stream live MJPEG video frames from a specific cluster instance."""
+    inst = CLUSTER_POOL.get_instance(instance_id)
+    if not inst:
+        raise HTTPException(status_code=404, detail=f"Instance [{instance_id}] not found.")
+    return StreamingResponse(
+        _generate_mjpeg_frames(instance_id=instance_id, fps=fps),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+    )
+
+
+class DeviceActionRequest(BaseModel):
+    action: str = Field(default="tap", description="'tap', 'swipe', 'key', 'text'")
+    x: Optional[int] = Field(default=None, description="X coordinate")
+    y: Optional[int] = Field(default=None, description="Y coordinate")
+    x2: Optional[int] = Field(default=None, description="Target X coordinate for swipe")
+    y2: Optional[int] = Field(default=None, description="Target Y coordinate for swipe")
+    duration_ms: Optional[int] = Field(default=300, description="Swipe duration in ms")
+    keycode: Optional[int] = Field(default=None, description="Keycode")
+    text: Optional[str] = Field(default=None, description="Text to input")
+
+
+@app.post("/api/v1/cluster/instances/{instance_id}/action")
+def send_instance_action(instance_id: str, req: DeviceActionRequest) -> Dict[str, Any]:
+    """Dispatch virtual touch or key action to a cluster instance device."""
+    inst = CLUSTER_POOL.get_instance(instance_id)
+    if not inst:
+        raise HTTPException(status_code=404, detail=f"Instance [{instance_id}] not found.")
+
+    if not inst.device:
+        if not inst.connect():
+            raise HTTPException(status_code=500, detail=f"Failed to connect device on [{instance_id}].")
+
+    device = inst.device
+    if req.action == "tap":
+        if req.x is None or req.y is None:
+            raise HTTPException(status_code=400, detail="Action 'tap' requires 'x' and 'y'.")
+        res = device.click(float(req.x), float(req.y))
+        return {"status": "ok", "action": "tap", "instance_id": instance_id, "coords": res}
+    elif req.action == "swipe":
+        if None in (req.x, req.y, req.x2, req.y2):
+            raise HTTPException(status_code=400, detail="Action 'swipe' requires 'x', 'y', 'x2', 'y2'.")
+        device.swipe(float(req.x), float(req.y), float(req.x2), float(req.y2))
+        return {"status": "ok", "action": "swipe", "instance_id": instance_id}
+    elif req.action == "key":
+        keycode = req.keycode or 4
+        if hasattr(device, "key_event"):
+            device.key_event(keycode)
+        return {"status": "ok", "action": "key", "keycode": keycode, "instance_id": instance_id}
+    elif req.action == "text":
+        if req.text is None:
+            raise HTTPException(status_code=400, detail="Action 'text' requires 'text'.")
+        if hasattr(device, "input_text"):
+            device.input_text(req.text)
+        return {"status": "ok", "action": "text", "instance_id": instance_id}
+    else:
+        raise HTTPException(status_code=400, detail=f"Unsupported action: {req.action}")
 
 
 @app.post("/api/v1/cluster/team/create")

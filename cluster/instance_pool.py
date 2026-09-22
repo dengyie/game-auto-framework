@@ -106,6 +106,11 @@ class DeviceInstance:
                 logger.error(f"Instance [{self.instance_id}] error during connect: {e}")
                 return False
 
+    def heartbeat(self) -> None:
+        """Update last heartbeat timestamp to now."""
+        with self._state_lock:
+            self.last_heartbeat_time = time.time()
+
     def disconnect(self) -> None:
         """Stop any running task and disconnect device."""
         with self._state_lock:
