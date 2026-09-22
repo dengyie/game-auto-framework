@@ -1,0 +1,17 @@
+[Unit]
+Description=Game Auto Framework 24h Soak Test Service
+After=network.target game-auto.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/game-auto-framework
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/game-auto-framework/.venv/bin/python scripts/soak_test_24h.py --duration-hours 24.0 --sample-interval-sec 10.0 --instances 5 --device-type virtual --report logs/soak_test_report.json
+KillMode=process
+KillSignal=SIGINT
+TimeoutStopSec=30
+Restart=no
+
+[Install]
+WantedBy=multi-user.target
