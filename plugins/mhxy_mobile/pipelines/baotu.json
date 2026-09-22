@@ -1,0 +1,159 @@
+{
+  "name": "daily_baotu",
+  "entry": "accept_baotu_task",
+  "nodes": [
+    {
+      "name": "accept_baotu_task",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "find_baotu_dialog"
+      },
+      "action": {
+        "type": "click",
+        "target_pos": [930, 430]
+      },
+      "next": [
+        "battle_thief",
+        "open_inventory_to_dig"
+      ],
+      "timeout_sec": 30.0
+    },
+    {
+      "name": "battle_thief",
+      "recognition": {
+        "type": "battle"
+      },
+      "action": {
+        "type": "click",
+        "target_pos": [1120, 620]
+      },
+      "next": [
+        "wait_thief_battle_end"
+      ],
+      "timeout_sec": 45.0
+    },
+    {
+      "name": "wait_thief_battle_end",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "is_battle_ended"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "increment_baotu_count"
+      },
+      "branches": [
+        {
+          "condition": "baotu_count >= 10",
+          "next": "open_inventory_to_dig"
+        }
+      ],
+      "next": [
+        "track_next_thief"
+      ],
+      "timeout_sec": 90.0
+    },
+    {
+      "name": "track_next_thief",
+      "recognition": {
+        "type": "always"
+      },
+      "action": {
+        "type": "click",
+        "target_pos": [1180, 210]
+      },
+      "next": [
+        "battle_thief",
+        "open_inventory_to_dig"
+      ],
+      "timeout_sec": 30.0
+    },
+    {
+      "name": "open_inventory_to_dig",
+      "recognition": {
+        "type": "always"
+      },
+      "action": {
+        "type": "click",
+        "target_pos": [1180, 640]
+      },
+      "next": [
+        "select_treasure_map"
+      ],
+      "timeout_sec": 20.0
+    },
+    {
+      "name": "select_treasure_map",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "has_treasure_map_in_bag"
+      },
+      "action": {
+        "type": "click",
+        "target_pos": [850, 220]
+      },
+      "next": [
+        "click_use_map"
+      ],
+      "timeout_sec": 20.0
+    },
+    {
+      "name": "click_use_map",
+      "recognition": {
+        "type": "always"
+      },
+      "action": {
+        "type": "click",
+        "target_pos": [720, 520]
+      },
+      "next": [
+        "wait_dig_finish"
+      ],
+      "timeout_sec": 20.0
+    },
+    {
+      "name": "wait_dig_finish",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "is_dig_completed"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "increment_dig_count"
+      },
+      "branches": [
+        {
+          "condition": "dig_count >= 10",
+          "next": "baotu_finish"
+        }
+      ],
+      "next": [
+        "open_inventory_to_dig"
+      ],
+      "timeout_sec": 45.0
+    },
+    {
+      "name": "baotu_finish",
+      "recognition": {
+        "type": "always"
+      },
+      "action": {
+        "type": "none"
+      },
+      "is_terminal": true
+    },
+    {
+      "name": "intercept_anti_bot_popup",
+      "is_interrupt": true,
+      "recognition": {
+        "type": "custom",
+        "custom_func": "detect_anti_bot_popup"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "resolve_anti_bot_popup"
+      },
+      "timeout_sec": 15.0
+    }
+  ]
+}

@@ -41,7 +41,9 @@ def test_humanized_controller_simulation():
     virtual_driver = VirtualInputDriver()
     controller = HumanizedController(virtual_driver)
 
-    tx, ty = controller.human_click(400, 300, radius_x=5, radius_y=5, press_duration_range=(0.001, 0.002))
+    tx, ty = controller.human_click(
+        400, 300, radius_x=5, radius_y=5, press_duration_range=(0.001, 0.002), micro_drift=False
+    )
     assert 390 <= tx <= 410
     assert 290 <= ty <= 310
     assert len(virtual_driver.event_log) >= 3

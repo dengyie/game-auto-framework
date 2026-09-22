@@ -6,56 +6,125 @@
       "name": "check_task_list",
       "recognition": {
         "type": "custom",
-        "custom_func": "find_shimen_tracker"
+        "custom_func": "find_shimen_tracker",
+        "threshold": 0.7
       },
       "action": {
         "type": "custom",
         "custom_func": "click_shimen_tracker"
       },
-      "next": ["talk_to_master", "dialog_turnin", "buy_required_item"],
-      "timeout_sec": 20.0
+      "branches": [
+        {
+          "condition": "shimen_rounds >= 20",
+          "next": "shimen_finish"
+        }
+      ],
+      "next": [
+        "talk_to_master",
+        "dialog_turnin",
+        "buy_required_item",
+        "battle_patrol"
+      ],
+      "timeout_sec": 30.0
     },
     {
       "name": "talk_to_master",
       "recognition": {
         "type": "custom",
-        "custom_func": "is_master_dialog_open"
+        "custom_func": "is_master_dialog_open",
+        "threshold": 0.7
       },
       "action": {
         "type": "custom",
         "custom_func": "click_accept_shimen"
       },
-      "next": ["check_task_list", "complete_round"],
-      "timeout_sec": 15.0
+      "next": [
+        "check_task_list"
+      ],
+      "timeout_sec": 20.0
     },
     {
       "name": "dialog_turnin",
       "recognition": {
         "type": "custom",
-        "custom_func": "is_turnin_dialog_open"
+        "custom_func": "is_turnin_dialog_open",
+        "threshold": 0.7
       },
       "action": {
         "type": "custom",
         "custom_func": "click_turnin_item"
       },
-      "next": ["check_task_list", "complete_round"],
-      "timeout_sec": 15.0
+      "next": [
+        "increment_round"
+      ],
+      "timeout_sec": 20.0
     },
     {
       "name": "buy_required_item",
       "recognition": {
         "type": "custom",
-        "custom_func": "is_shop_dialog_open"
+        "custom_func": "is_shop_dialog_open",
+        "threshold": 0.7
       },
       "action": {
         "type": "custom",
         "custom_func": "click_buy_shop_item"
       },
-      "next": ["check_task_list"],
-      "timeout_sec": 15.0
+      "next": [
+        "check_task_list"
+      ],
+      "timeout_sec": 20.0
     },
     {
-      "name": "complete_round",
+      "name": "battle_patrol",
+      "recognition": {
+        "type": "battle"
+      },
+      "action": {
+        "type": "click",
+        "target_pos": [1120, 620]
+      },
+      "next": [
+        "wait_battle_end"
+      ],
+      "timeout_sec": 45.0
+    },
+    {
+      "name": "wait_battle_end",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "is_battle_ended"
+      },
+      "action": {
+        "type": "wait",
+        "duration": 1.0
+      },
+      "next": [
+        "increment_round"
+      ],
+      "timeout_sec": 120.0
+    },
+    {
+      "name": "increment_round",
+      "recognition": {
+        "type": "always"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "increment_shimen_round"
+      },
+      "branches": [
+        {
+          "condition": "shimen_rounds >= 20",
+          "next": "shimen_finish"
+        }
+      ],
+      "next": [
+        "check_task_list"
+      ]
+    },
+    {
+      "name": "shimen_finish",
       "recognition": {
         "type": "always"
       },
@@ -66,6 +135,7 @@
     },
     {
       "name": "intercept_anti_bot_popup",
+      "is_interrupt": true,
       "recognition": {
         "type": "custom",
         "custom_func": "detect_anti_bot_popup"
@@ -74,7 +144,6 @@
         "type": "custom",
         "custom_func": "resolve_anti_bot_popup"
       },
-      "is_interrupt": true,
       "timeout_sec": 15.0
     }
   ]

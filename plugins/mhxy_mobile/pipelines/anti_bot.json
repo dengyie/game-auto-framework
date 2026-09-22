@@ -1,0 +1,31 @@
+{
+  "name": "anti_bot_interceptor",
+  "entry": "detect_and_resolve",
+  "nodes": [
+    {
+      "name": "detect_and_resolve",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "detect_anti_bot_popup"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "resolve_anti_bot_popup"
+      },
+      "next": [
+        "confirm_resolved"
+      ],
+      "timeout_sec": 30.0
+    },
+    {
+      "name": "confirm_resolved",
+      "recognition": {
+        "type": "always"
+      },
+      "action": {
+        "type": "none"
+      },
+      "is_terminal": true
+    }
+  ]
+}
