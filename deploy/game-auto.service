@@ -13,7 +13,7 @@ Environment=VLM_API_BASE=https://api.openai.com/v1
 # Provide actual credentials in /etc/default/game-auto if needed
 EnvironmentFile=-/etc/default/game-auto
 
-ExecStart=/root/.cargo/bin/uv run python main.py server --host 0.0.0.0 --port 8000
+ExecStart=/opt/game-auto-framework/.venv/bin/python main.py server --host 0.0.0.0 --port 8000
 Restart=always
 RestartSec=5s
 LimitNOFILE=65536
