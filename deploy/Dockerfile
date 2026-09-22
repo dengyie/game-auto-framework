@@ -32,15 +32,16 @@ COPY cluster/ ./cluster/
 COPY config/ ./config/
 COPY plugins/ ./plugins/
 COPY server/ ./server/
+COPY scripts/ ./scripts/
+COPY tests/ ./tests/
 COPY main.py ./
 
 # Create runtime directories for data persistence
-RUN mkdir -p logs screenshots config/accounts
+RUN mkdir -p logs screenshots config/accounts reports
 
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-ENTRYPOINT ["python", "main.py"]
-CMD ["server", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "main.py", "server", "--host", "0.0.0.0", "--port", "8000"]

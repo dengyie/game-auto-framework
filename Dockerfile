@@ -29,7 +29,11 @@ COPY cluster/ ./cluster/
 COPY config/ ./config/
 COPY plugins/ ./plugins/
 COPY server/ ./server/
+COPY scripts/ ./scripts/
+COPY tests/ ./tests/
 COPY main.py ./
+
+RUN mkdir -p logs screenshots reports
 
 EXPOSE 8000
 
