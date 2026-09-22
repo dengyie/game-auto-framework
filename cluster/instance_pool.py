@@ -494,6 +494,9 @@ class InstancePool:
                 return list(self._instances.values())
             return [inst for inst in self._instances.values() if inst.status == status]
 
+    # Alias for convenience
+    get_instances = list_instances
+
     def allocate_instance(self, preferred_id: Optional[str] = None) -> Optional[DeviceInstance]:
         """Find and claim an available IDLE instance."""
         with self._lock:

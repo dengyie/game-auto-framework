@@ -372,6 +372,90 @@ ACCOUNT_MATRIX = AccountMatrix.get_instance()
 SUPERVISOR = ClusterSupervisor.get_instance()
 
 
+def init_default_cluster(config_path: Optional[str] = None) -> None:
+    """Initialize default cluster state, accounts, proxies, instances and supervisor."""
+    # 1. Load accounts from config/accounts.json
+    candidates = [
+        config_path,
+        "config/accounts.json",
+        str(Path(__file__).parent.parent / "config" / "accounts.json"),
+        os.path.join(os.getcwd(), "config", "accounts.json"),
+    ]
+    target_path = None
+    for p in candidates:
+        if p and Path(p).exists():
+            target_path = p
+            break
+
+    if target_path and len(ACCOUNT_MATRIX.list_accounts()) == 0:
+        loaded = ACCOUNT_MATRIX.load_from_json(target_path)
+        logger.info(f"Auto-loaded {loaded} accounts from {target_path} into ACCOUNT_MATRIX")
+
+    # 2. Register Proxies if pool is empty
+    if PROXY_MANAGER.get_pool_status()["total_proxies"] == 0:
+        proxies = [
+            ("proxy_dgn_01", "socks5", "45.202.199.205", 44381),
+            ("proxy_hk_01", "socks5", "104.208.65.233", 56667),
+            ("proxy_in_01", "socks5", "20.198.2.112", 56667),
+            ("proxy_us_01", "socks5", "35.212.179.13", 44302),
+            ("proxy_sh_01", "socks5", "192.168.1.5", 7897),
+        ]
+        for p_id, proto, host, port in proxies:
+            PROXY_MANAGER.register_proxy(p_id, host=host, port=port, protocol=proto, max_instances=5)
+        logger.info(f"Registered {len(proxies)} default proxies in PROXY_MANAGER")
+
+    # 3. Register Instances & Bind Accounts
+    accounts = ACCOUNT_MATRIX.list_accounts()
+    if len(CLUSTER_POOL.get_instances()) == 0 and accounts:
+        for i, acc in enumerate(accounts, start=1):
+            inst_id = f"inst_{i:02d}"
+            inst = CLUSTER_POOL.register_instance(
+                instance_id=inst_id,
+                device_type="virtual",
+                serial=None,
+                name=f"{acc.role_name or f'Inst_{i}'}",
+            )
+            inst.connect()
+            inst.assigned_account_id = acc.account_id
+            inst.pipeline_name = "daily_shimen" if i == 1 else "basic_tasks"
+            inst.pipeline_status = PipelineStatus.RUNNING if i == 1 else PipelineStatus.IDLE
+            inst.status = InstanceStatus.BUSY if i == 1 else InstanceStatus.IDLE
+
+            # Bind proxy
+            avail = PROXY_MANAGER.get_available_proxy()
+            if avail:
+                PROXY_MANAGER.bind_instance_to_proxy(inst_id, avail.proxy_id)
+                inst.assigned_proxy_id = avail.proxy_id
+                acc.start_session(inst_id, avail.proxy_id)
+            else:
+                acc.start_session(inst_id)
+
+        # 4. Form 1 Leader + Members Team Topology
+        inst_ids = [inst.instance_id for inst in CLUSTER_POOL.get_instances()]
+        if len(inst_ids) >= 2 and len(CLUSTER_POOL.list_teams()) == 0:
+            CLUSTER_POOL.create_team(
+                team_id="team_01",
+                leader_id=inst_ids[0],
+                member_ids=inst_ids[1:],
+                target_activity="team_zhuogui",
+            )
+        logger.info(f"Formed cluster team_01 with {len(inst_ids)} instances")
+
+    # 5. Start Supervisor watchdog
+    if not SUPERVISOR.running:
+        SUPERVISOR.start()
+        logger.info("Started ClusterSupervisor watchdog")
+
+
+@app.on_event("startup")
+def on_startup() -> None:
+    init_default_cluster()
+
+
+# Trigger initial state creation
+init_default_cluster()
+
+
 class RegisterInstanceRequest(BaseModel):
     instance_id: str = Field(description="Unique instance ID (e.g. inst_01, emulator-5554)")
     device_type: str = Field(default="auto", description="'auto', 'adb', 'virtual'")

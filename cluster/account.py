@@ -320,6 +320,8 @@ class AccountMatrix:
                 "in_use_accounts": sum(1 for a in self._accounts.values() if a.status == AccountStatus.IN_USE),
                 "idle_accounts": sum(1 for a in self._accounts.values() if a.status == AccountStatus.IDLE),
                 "resting_accounts": sum(1 for a in self._accounts.values() if a.status == AccountStatus.RESTING),
+                "total_gold": total_gold,
+                "total_silver": total_silver,
                 "total_gold_coins": total_gold,
                 "total_silver_coins": total_silver,
                 "total_vitality": total_vitality,

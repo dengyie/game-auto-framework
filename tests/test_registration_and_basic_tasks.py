@@ -136,12 +136,12 @@ def test_basic_tasks_pipeline_dag_execution():
     assert ctx.variables.get("level") >= 15
 
 
-def test_team_5player_basic_tasks_coordination():
+def test_team_5player_basic_tasks_coordination(tmp_path: Path):
     """Verify 5-player team coordinated execution of basic tasks on InstancePool."""
     pool = InstancePool()
     matrix = AccountMatrix()
     reg = AccountRegistrationManager(matrix=matrix)
-    team_accounts = reg.register_and_save_team()
+    team_accounts = reg.register_and_save_team(config_path=str(tmp_path / "accounts.json"))
 
     instances: list[DeviceInstance] = []
     for i in range(1, 6):

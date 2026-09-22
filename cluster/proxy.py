@@ -271,3 +271,6 @@ class ProxyManager:
                 "free_slots": free_slots,
                 "bound_instances_count": len(self._instance_to_proxy),
             }
+
+    # Backward compatibility alias
+    get_pool_status = get_proxy_stats

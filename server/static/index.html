@@ -567,8 +567,10 @@
       const onlineAccs = accList.filter(a => a.status === 'in_use').length;
       const restAccs = accList.filter(a => a.status === 'resting').length;
       document.getElementById('kpi-acc-total').innerText = `${accList.length} 账号`;
-      document.getElementById('kpi-gold-total').innerHTML = `${assets.total_gold.toLocaleString()} <span style="font-size:0.9rem; font-weight:normal; color:var(--amber);">金币</span>`;
-      document.getElementById('kpi-silver-total').innerText = assets.total_silver.toLocaleString();
+      const goldVal = (assets.total_gold != null ? assets.total_gold : (assets.total_gold_coins != null ? assets.total_gold_coins : 0));
+      const silverVal = (assets.total_silver != null ? assets.total_silver : (assets.total_silver_coins != null ? assets.total_silver_coins : 0));
+      document.getElementById('kpi-gold-total').innerHTML = `${goldVal.toLocaleString()} <span style="font-size:0.9rem; font-weight:normal; color:var(--amber);">金币</span>`;
+      document.getElementById('kpi-silver-total').innerText = silverVal.toLocaleString();
       document.getElementById('kpi-acc-online').innerText = onlineAccs;
       document.getElementById('kpi-acc-resting').innerText = restAccs;
       document.getElementById('tab-cnt-accounts').innerText = accList.length;
