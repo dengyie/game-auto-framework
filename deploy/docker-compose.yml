@@ -1,0 +1,38 @@
+version: "3.8"
+
+services:
+  game-auto-framework:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: game-auto-framework:latest
+    container_name: game-auto-framework
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOGURU_LEVEL=INFO
+      - DEFAULT_DEVICE_TYPE=adb
+      - ADB_SERIAL=127.0.0.1:5555
+      - VLM_API_BASE=${VLM_API_BASE:-https://api.openai.com/v1}
+      - VLM_API_KEY=${VLM_API_KEY:-}
+      - VLM_MODEL=${VLM_MODEL:-gpt-4o-mini}
+      - FEISHU_WEBHOOK_URL=${FEISHU_WEBHOOK_URL:-}
+      - WECHAT_WEBHOOK_URL=${WECHAT_WEBHOOK_URL:-}
+    volumes:
+      - ../plugins:/app/plugins
+      - ../logs:/app/logs
+      - ../config:/app/config
+      - ../screenshots:/app/screenshots
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"

@@ -12,6 +12,7 @@ from loguru import logger
 from core.device.base import BaseDevice
 from core.cv.battle import BattleDetector
 from core.ocr.engine import OCREngine
+from core.vlm import LiveVLMDefenseSolver
 from plugins.base import BaseGamePlugin
 from plugins.mhxy_mobile.custom.quiz import QuizSolver
 from plugins.mhxy_mobile.custom import handlers as h
@@ -26,6 +27,7 @@ class MHXYMobilePlugin(BaseGamePlugin):
         self.battle_detector = BattleDetector()
         self.ocr_engine = OCREngine.get_instance()
         self.quiz_solver = QuizSolver()
+        self.vlm_defense_solver = LiveVLMDefenseSolver(device=device)
         super().__init__(plugin_dir=actual_dir, device=device)
 
     def register_custom_operators(self, context: PipelineContext) -> None:
@@ -243,20 +245,32 @@ class MHXYMobilePlugin(BaseGamePlugin):
             dialog_roi = self.coordinates.get("anti_bot", {}).get("dialog_bbox")
             res = self.ocr_engine.find_any_text(
                 frame,
-                ["验证码", "防沉迷", "请选择", "防挂机"],
+                ["验证码", "防沉迷", "请选择", "防挂机", "滑块", "拼图", "拖动", "依次点击"],
                 roi=tuple(dialog_roi) if dialog_roi else None,
                 threshold=70.0,
             )
             if res:
+                ctx.variables["anti_bot_prompt_text"] = res.text
                 return True
         return ctx.variables.get("anti_bot_popup_active", False)
 
     def _resolve_anti_bot_popup(self, ctx: PipelineContext, act: NodeAction) -> None:
         """Resolves anti-bot captcha and clicks corresponding answer option."""
-        logger.warning("Anti-bot modal active! Resolving via question answer pipeline...")
-        opt1 = self.coordinates.get("anti_bot", {}).get("option_1", [420, 360, 180, 40])
-        cx = opt1[0] + opt1[2] / 2
-        cy = opt1[1] + opt1[3] / 2
-        self.device.click(cx, cy)
+        prompt_text = ctx.variables.get("anti_bot_prompt_text", "")
+        logger.warning(f"Anti-bot modal active! Resolving via LiveVLMDefenseSolver with prompt: '{prompt_text}'...")
+        frame = self.device.screencap_mat()
+        slider_hint = self.coordinates.get("anti_bot", {}).get("slider_start_hint")
+        success = self.vlm_defense_solver.auto_solve_challenge(
+            frame=frame,
+            detected_text=prompt_text,
+            slider_start_hint=tuple(slider_hint) if slider_hint else None,
+        )
+        if not success:
+            logger.warning("VLM solver reported failure, executing fallback click")
+            opt1 = self.coordinates.get("anti_bot", {}).get("option_1", [420, 360, 180, 40])
+            cx = opt1[0] + opt1[2] / 2
+            cy = opt1[1] + opt1[3] / 2
+            self.device.click(cx, cy)
         ctx.variables["anti_bot_popup_active"] = False
-        logger.info("Anti-bot option clicked and dismissed.")
+        ctx.variables["anti_bot_prompt_text"] = ""
+        logger.info("Anti-bot verification handled and dismissed.")

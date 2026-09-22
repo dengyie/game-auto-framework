@@ -1,0 +1,25 @@
+[Unit]
+Description=Game Auto Framework Cluster & API Daemon
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/game-auto-framework
+Environment=PYTHONUNBUFFERED=1
+Environment=LOGURU_LEVEL=INFO
+Environment=VLM_API_BASE=https://api.openai.com/v1
+# Provide actual credentials in /etc/default/game-auto if needed
+EnvironmentFile=-/etc/default/game-auto
+
+ExecStart=/root/.cargo/bin/uv run python main.py server --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5s
+LimitNOFILE=65536
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=game-auto-framework
+
+[Install]
+WantedBy=multi-user.target
