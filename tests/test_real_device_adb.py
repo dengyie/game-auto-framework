@@ -60,18 +60,69 @@ def test_real_adb_device_screencap_and_ocr():
 
 @skip_if_no_adb
 def test_real_adb_device_touch_input():
-    """Verify humanized click and swipe dispatch on real ADB device."""
-    dev = DeviceFactory.create(device_type="adb", serial=CONNECTED_SERIAL)
+    """Verify humanized click and swipe dispatch on real ADB device with auto-scaling."""
+    from core.device.adb import AdbDevice
+    dev = AdbDevice(serial=CONNECTED_SERIAL, resolution=(1280, 720), auto_scale=True)
     assert dev.connect() is True
+    assert dev.actual_resolution is not None
 
-    # Humanized click with Gaussian offset
+    # Verify coordinate mapping
+    act_w, act_h = dev.actual_resolution
+    expected_x = 400 * (act_w / 1280)
+    expected_y = 600 * (act_h / 720)
+
+    # Humanized click with Gaussian offset around scaled coordinates
     target_x, target_y = dev.click(400, 600, radius=5.0)
-    assert 380 <= target_x <= 420
-    assert 580 <= target_y <= 620
+    assert (expected_x - 20) <= target_x <= (expected_x + 20)
+    assert (expected_y - 20) <= target_y <= (expected_y + 20)
+
+    # Test unmap symmetry
+    orig_x, orig_y = dev.unmap_coordinates(expected_x, expected_y)
+    assert abs(orig_x - 400) < 1e-3
+    assert abs(orig_y - 600) < 1e-3
 
     # Humanized Bezier swipe
-    swipe_res = dev.swipe(500, 1200, 500, 600, steps=15)
+    swipe_res = dev.swipe(100, 200, 300, 400, steps=15)
     assert len(swipe_res) >= 2
+
+
+@skip_if_no_adb
+def test_real_adb_device_frame_resizing():
+    """Verify screencap resizing to canonical baseline and raw mode."""
+    from core.device.adb import AdbDevice
+    dev = AdbDevice(serial=CONNECTED_SERIAL, resolution=(1280, 720), resize_frame_to_baseline=True)
+    assert dev.connect() is True
+
+    # 1. Baseline screencap (should be 1280x720)
+    baseline_bytes = dev.screencap()
+    base_img = cv2.imdecode(np.frombuffer(baseline_bytes, np.uint8), cv2.IMREAD_COLOR)
+    assert base_img.shape == (720, 1280, 3)
+
+    # 2. Raw screencap (should be physical size, e.g. 1080x2400)
+    raw_bytes = dev.screencap_raw()
+    raw_img = cv2.imdecode(np.frombuffer(raw_bytes, np.uint8), cv2.IMREAD_COLOR)
+    assert raw_img.shape[0] == dev.actual_resolution[1]
+    assert raw_img.shape[1] == dev.actual_resolution[0]
+
+
+@skip_if_no_adb
+def test_real_adb_device_app_lifecycle():
+    """Verify app management on real device (Appium Settings test app)."""
+    from core.device.adb import AdbDevice
+    dev = AdbDevice(serial=CONNECTED_SERIAL)
+    assert dev.connect() is True
+
+    pkg = "io.appium.settings"
+    # Stop app first
+    dev.stop_app(pkg)
+    assert dev.is_app_running(pkg) is False
+
+    # Start app
+    start_ok = dev.start_app(pkg)
+    assert start_ok is True
+
+    # Clean up
+    dev.stop_app(pkg)
 
 
 @skip_if_no_adb
