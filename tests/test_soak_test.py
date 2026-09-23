@@ -41,6 +41,7 @@ def test_soak_test_runner_smoke_execution(tmp_path: Path):
     assert md_file.exists()
     content = md_file.read_text()
     assert "PASSED (ALL SLA MET)" in content
+    runner.stop()
 
 
 def test_soak_test_runner_fault_recovery(tmp_path: Path):
@@ -55,6 +56,8 @@ def test_soak_test_runner_fault_recovery(tmp_path: Path):
     )
 
     runner.setup_cluster()
+    # Stop background thread to test synchronous recovery explicitly without thread race
+    runner.supervisor.stop()
     # Force a fault injection manually
     runner._run_fault_injection(step=60)
     assert runner.faults_injected == 1

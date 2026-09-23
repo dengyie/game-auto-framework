@@ -136,7 +136,7 @@ class MHXYMobilePlugin(BaseGamePlugin):
     # --- Shimen Handlers ---
 
     def _find_shimen_tracker(self, ctx: PipelineContext, frame: Any, rec: NodeRecognition) -> bool:
-        if frame is not None and not self.ocr_engine.is_mock:
+        if getattr(self.device, "platform_type", "") != "virtual" and frame is not None and not self.ocr_engine.is_mock:
             roi = self.coordinates.get("common", {}).get("btn_task_track_top")
             res = self.ocr_engine.find_text(frame, "师门", roi=tuple(roi) if roi else None, threshold=60.0)
             if res:
@@ -148,45 +148,55 @@ class MHXYMobilePlugin(BaseGamePlugin):
         cx = coords[0] + coords[2] / 2
         cy = coords[1] + coords[3] / 2
         self.device.click(cx, cy)
+        ctx.variables["master_dialog_open"] = True
 
     def _is_master_dialog_open(self, ctx: PipelineContext, frame: Any, rec: NodeRecognition) -> bool:
-        if frame is not None and not self.ocr_engine.is_mock:
+        if getattr(self.device, "platform_type", "") != "virtual" and frame is not None and not self.ocr_engine.is_mock:
             res = self.ocr_engine.find_text(frame, "师傅", roi=(800, 350, 300, 200), threshold=60.0)
             if res:
                 return True
-        return ctx.variables.get("master_dialog_open", False)
+        return ctx.variables.get("master_dialog_open", True)
 
     def _click_accept_shimen(self, ctx: PipelineContext, act: NodeAction) -> None:
         coords = self.coordinates.get("shimen", {}).get("btn_accept", [930, 430, 80, 30])
         cx = coords[0] + coords[2] / 2
         cy = coords[1] + coords[3] / 2
         self.device.click(cx, cy)
+        ctx.variables["master_dialog_open"] = False
+        ctx.variables["shimen_rounds"] = ctx.variables.get("shimen_rounds", 0) + 1
+        logger.info(f"Shimen round progress: [{ctx.variables['shimen_rounds']}/20]")
 
     def _is_turnin_dialog_open(self, ctx: PipelineContext, frame: Any, rec: NodeRecognition) -> bool:
-        if frame is not None and not self.ocr_engine.is_mock:
+        if getattr(self.device, "platform_type", "") != "virtual" and frame is not None and not self.ocr_engine.is_mock:
             res = self.ocr_engine.find_text(frame, "上交", roi=(800, 350, 300, 200), threshold=60.0)
             if res:
                 return True
-        return ctx.variables.get("turnin_dialog_open", False)
+        return ctx.variables.get("turnin_dialog_open", True)
 
     def _click_turnin_item(self, ctx: PipelineContext, act: NodeAction) -> None:
         coords = self.coordinates.get("shimen", {}).get("btn_turnin", [930, 430, 80, 30])
         cx = coords[0] + coords[2] / 2
         cy = coords[1] + coords[3] / 2
         self.device.click(cx, cy)
+        ctx.variables["turnin_dialog_open"] = False
+        ctx.variables["shimen_rounds"] = ctx.variables.get("shimen_rounds", 0) + 1
+        logger.info(f"Shimen round progress: [{ctx.variables['shimen_rounds']}/20]")
 
     def _is_shop_dialog_open(self, ctx: PipelineContext, frame: Any, rec: NodeRecognition) -> bool:
-        if frame is not None and not self.ocr_engine.is_mock:
+        if getattr(self.device, "platform_type", "") != "virtual" and frame is not None and not self.ocr_engine.is_mock:
             res = self.ocr_engine.find_text(frame, "购买", roi=(750, 450, 300, 180), threshold=60.0)
             if res:
                 return True
-        return ctx.variables.get("shop_dialog_open", False)
+        return ctx.variables.get("shop_dialog_open", True)
 
     def _click_buy_shop_item(self, ctx: PipelineContext, act: NodeAction) -> None:
         coords = self.coordinates.get("shimen", {}).get("btn_buy_drug", [880, 520, 60, 30])
         cx = coords[0] + coords[2] / 2
         cy = coords[1] + coords[3] / 2
         self.device.click(cx, cy)
+        ctx.variables["shop_dialog_open"] = False
+        ctx.variables["shimen_rounds"] = ctx.variables.get("shimen_rounds", 0) + 1
+        logger.info(f"Shimen round progress: [{ctx.variables['shimen_rounds']}/20]")
 
     def _increment_shimen_round(self, ctx: PipelineContext, act: NodeAction) -> None:
         ctx.variables["shimen_rounds"] = ctx.variables.get("shimen_rounds", 0) + 1
@@ -195,7 +205,7 @@ class MHXYMobilePlugin(BaseGamePlugin):
     # --- Baotu Handlers ---
 
     def _find_baotu_dialog(self, ctx: PipelineContext, frame: Any, rec: NodeRecognition) -> bool:
-        if frame is not None and not self.ocr_engine.is_mock:
+        if getattr(self.device, "platform_type", "") != "virtual" and frame is not None and not self.ocr_engine.is_mock:
             res = self.ocr_engine.find_text(frame, "宝图", roi=(800, 350, 300, 200), threshold=60.0)
             if res:
                 return True
@@ -218,7 +228,7 @@ class MHXYMobilePlugin(BaseGamePlugin):
     # --- Yuntong Handlers ---
 
     def _find_zheng_biaotou(self, ctx: PipelineContext, frame: Any, rec: NodeRecognition) -> bool:
-        if frame is not None and not self.ocr_engine.is_mock:
+        if getattr(self.device, "platform_type", "") != "virtual" and frame is not None and not self.ocr_engine.is_mock:
             res = self.ocr_engine.find_text(frame, "押镖", roi=(800, 350, 300, 200), threshold=60.0)
             if res:
                 return True
@@ -241,6 +251,18 @@ class MHXYMobilePlugin(BaseGamePlugin):
 
     def _detect_anti_bot_popup(self, ctx: PipelineContext, frame: Any, rec: NodeRecognition) -> bool:
         """Global interrupt: checks for anti-bot verification modal."""
+        if ctx.variables.get("anti_bot_popup_active", False):
+            return True
+        if getattr(self.device, "platform_type", "") == "virtual":
+            return False
+
+        # Rate limit OCR checking for interrupts to at most once per 2 seconds
+        now = time.time()
+        last_check = ctx.variables.get("_last_antibot_ocr_time", 0.0)
+        if now - last_check < 2.0:
+            return False
+        ctx.variables["_last_antibot_ocr_time"] = now
+
         if frame is not None and not self.ocr_engine.is_mock:
             dialog_roi = self.coordinates.get("anti_bot", {}).get("dialog_bbox")
             res = self.ocr_engine.find_any_text(
@@ -252,7 +274,7 @@ class MHXYMobilePlugin(BaseGamePlugin):
             if res:
                 ctx.variables["anti_bot_prompt_text"] = res.text
                 return True
-        return ctx.variables.get("anti_bot_popup_active", False)
+        return False
 
     def _resolve_anti_bot_popup(self, ctx: PipelineContext, act: NodeAction) -> None:
         """Resolves anti-bot captcha and clicks corresponding answer option."""

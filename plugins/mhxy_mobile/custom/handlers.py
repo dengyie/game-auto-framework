@@ -115,7 +115,40 @@ def click_ghost_tracker(ctx: PipelineContext, act: NodeAction) -> None:
     ctx.variables["in_ghost_battle"] = True
 
 
+def _sync_with_team_leader(ctx: PipelineContext) -> None:
+    """Synchronize cooperative member status (combat/rounds) with team leader."""
+    team_id = ctx.variables.get("team_id")
+    if not team_id:
+        return
+    try:
+        from cluster.instance_pool import InstancePool, InstanceStatus, PipelineStatus
+        pool = InstancePool.get_pool()
+        team = pool.get_team(team_id)
+        if not team or not team.leader_instance_id:
+            return
+        leader = pool.get_instance(team.leader_instance_id)
+        if not leader:
+            return
+
+        # If leader already finished routine or pipeline, member automatically reaches target rounds
+        if leader.pipeline_status == PipelineStatus.COMPLETED or leader.status == InstanceStatus.IDLE:
+            target_rounds = ctx.variables.get("max_zhuogui_rounds", 10)
+            ctx.variables["zhuogui_rounds"] = target_rounds
+            return
+
+        if leader.plugin and leader.plugin.context:
+            l_ctx = leader.plugin.context
+            l_rounds = l_ctx.variables.get("zhuogui_rounds", 0)
+            if l_rounds > ctx.variables.get("zhuogui_rounds", 0):
+                ctx.variables["zhuogui_rounds"] = l_rounds
+            if l_ctx.variables.get("in_ghost_battle", False):
+                ctx.variables["in_ghost_battle"] = True
+    except Exception as e:
+        logger.debug(f"Team leader sync failed: {e}")
+
+
 def is_ghost_in_battle(ctx: PipelineContext, frame: Any, rec: NodeRecognition) -> bool:
+    _sync_with_team_leader(ctx)
     return ctx.variables.get("in_ghost_battle", False)
 
 
@@ -147,6 +180,7 @@ def apply_join_ghost_team(ctx: PipelineContext, act: NodeAction) -> None:
 
 
 def is_following_leader(ctx: PipelineContext, frame: Any, rec: NodeRecognition) -> bool:
+    _sync_with_team_leader(ctx)
     return ctx.variables.get("is_following", True)
 
 

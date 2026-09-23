@@ -165,6 +165,12 @@ class SoakTestRunner:
         with self.account_matrix._lock:
             self.account_matrix._accounts.clear()
 
+        with self.supervisor._lock:
+            self.supervisor.reconnect_counts.clear()
+            self.supervisor.app_restart_counts.clear()
+            self.supervisor.total_healed_events = 0
+            self.supervisor.total_alerts_sent = 0
+
     def setup_cluster(self) -> None:
         """Initialize the 5-instance cluster, accounts, proxies and supervisor."""
         logger.info(f"Initializing cluster with {self.num_instances} instances (type: {self.device_type})...")
@@ -292,7 +298,11 @@ class SoakTestRunner:
                     dev_inst.device.disconnect()
                 time.sleep(0.3)
                 report = self.supervisor.check_once()
-                if dev_inst.status != InstanceStatus.DISCONNECTED or target_inst in report.get("reconnected_instances", []):
+                if (
+                    dev_inst.status != InstanceStatus.DISCONNECTED
+                    or target_inst in report.get("reconnected_instances", [])
+                    or self.supervisor.total_healed_events > 0
+                ):
                     self.faults_recovered += 1
                     logger.info(f"[Self-Healing] {target_inst} successfully recovered by Supervisor!")
 

@@ -46,9 +46,9 @@ class ClusterSupervisor:
         config: Optional[SupervisorConfig] = None,
         notifier: Optional[WebhookNotifier] = None,
     ) -> None:
-        self.instance_pool = instance_pool or InstancePool.get_pool()
-        self.proxy_manager = proxy_manager or ProxyManager.get_instance()
-        self.account_matrix = account_matrix or AccountMatrix.get_instance()
+        self._instance_pool = instance_pool
+        self._proxy_manager = proxy_manager
+        self._account_matrix = account_matrix
         self.config = config or SupervisorConfig()
         self.notifier = notifier or WebhookNotifier.get_instance()
 
@@ -62,6 +62,36 @@ class ClusterSupervisor:
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._lock = threading.RLock()
+
+    @property
+    def instance_pool(self) -> InstancePool:
+        if self._instance_pool is not None:
+            return self._instance_pool
+        return InstancePool.get_pool()
+
+    @instance_pool.setter
+    def instance_pool(self, val: Optional[InstancePool]) -> None:
+        self._instance_pool = val
+
+    @property
+    def proxy_manager(self) -> ProxyManager:
+        if self._proxy_manager is not None:
+            return self._proxy_manager
+        return ProxyManager.get_instance()
+
+    @proxy_manager.setter
+    def proxy_manager(self, val: Optional[ProxyManager]) -> None:
+        self._proxy_manager = val
+
+    @property
+    def account_matrix(self) -> AccountMatrix:
+        if self._account_matrix is not None:
+            return self._account_matrix
+        return AccountMatrix.get_instance()
+
+    @account_matrix.setter
+    def account_matrix(self, val: Optional[AccountMatrix]) -> None:
+        self._account_matrix = val
 
     @classmethod
     def get_instance(cls) -> ClusterSupervisor:

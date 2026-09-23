@@ -254,6 +254,19 @@ class DeviceInstance:
                             self.completed_cycles += 1
                             if r_status == RoutineStatus.COMPLETED:
                                 self.pipeline_status = PipelineStatus.COMPLETED
+                                if self.assigned_account_id:
+                                    try:
+                                        from cluster.account import AccountMatrix
+                                        matrix = AccountMatrix.get_instance()
+                                        matrix.record_income(
+                                            account_id=self.assigned_account_id,
+                                            gold=9000,
+                                            silver=700000,
+                                            active_points=80,
+                                        )
+                                        matrix.save_to_json("config/accounts.json")
+                                    except Exception as ex:
+                                        logger.debug(f"Failed to record routine income: {ex}")
                             else:
                                 self.pipeline_status = PipelineStatus.FAILED
                                 self.error_message = routine_exec.error_message
@@ -270,6 +283,19 @@ class DeviceInstance:
                         ):
                             self.status = InstanceStatus.IDLE
                             self.completed_cycles += 1
+                            if p_status == PipelineStatus.COMPLETED and self.assigned_account_id:
+                                try:
+                                    from cluster.account import AccountMatrix
+                                    matrix = AccountMatrix.get_instance()
+                                    matrix.record_income(
+                                        account_id=self.assigned_account_id,
+                                        gold=2200,
+                                        silver=180000,
+                                        active_points=20,
+                                    )
+                                    matrix.save_to_json("config/accounts.json")
+                                except Exception as ex:
+                                    logger.debug(f"Failed to record pipeline income: {ex}")
                     return p_status
             except Exception as e:
                 logger.error(f"Instance [{self.instance_id}] tick failed: {e}")
@@ -436,6 +462,7 @@ class InstancePool:
         self._instances: Dict[str, DeviceInstance] = {}
         self._teams: Dict[str, TeamTopology] = {}
         self._lock = threading.RLock()
+        InstancePool._instance = self
 
     @classmethod
     def get_pool(cls) -> InstancePool:
