@@ -131,12 +131,19 @@ INDEX_HTML = STATIC_DIR / "index.html"
 @app.get("/dashboard", response_class=HTMLResponse)
 @app.head("/dashboard")
 @app.get("/instances", response_class=HTMLResponse)
+@app.head("/instances")
 @app.get("/stream", response_class=HTMLResponse)
+@app.head("/stream")
 @app.get("/teams", response_class=HTMLResponse)
+@app.head("/teams")
 @app.get("/proxies", response_class=HTMLResponse)
+@app.head("/proxies")
 @app.get("/accounts", response_class=HTMLResponse)
+@app.head("/accounts")
 @app.get("/soak", response_class=HTMLResponse)
+@app.head("/soak")
 @app.get("/agent", response_class=HTMLResponse)
+@app.head("/agent")
 def serve_dashboard() -> HTMLResponse:
     """Serve the embedded modern dark-mode Web Dashboard and tab sub-URLs."""
     if INDEX_HTML.exists():
