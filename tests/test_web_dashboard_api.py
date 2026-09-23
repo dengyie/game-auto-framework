@@ -168,6 +168,37 @@ def test_video_stream_and_device_action_endpoints(client):
     assert "image/jpeg" in shot_res.headers["content-type"]
     assert len(shot_res.content) > 0
 
+    # Verify not a black screen: has significant byte size and dynamic color palette
+    from PIL import Image
+    import io
+    img = Image.open(io.BytesIO(shot_res.content))
+    assert img.size == (1280, 720)
+    colors = img.getcolors(maxcolors=100000)
+    assert colors is not None
+    assert len(colors) > 1000  # Dynamic frame has rich game canvas and HUD elements
+
     # 5. Clean up
     client.delete("/api/v1/cluster/instances/stream_test_inst")
+
+
+def test_dashboard_sub_urls(client):
+    """Verify sub-URL paths directly serve the SPA dashboard with history routing."""
+    sub_urls = [
+        "/instances",
+        "/stream",
+        "/teams",
+        "/proxies",
+        "/accounts",
+        "/soak",
+        "/agent",
+    ]
+    for path in sub_urls:
+        res = client.get(path)
+        assert res.status_code == 200
+        assert "text/html" in res.headers["content-type"]
+        assert "VALID_TABS" in res.text
+        assert "parseTabFromUrl" in res.text
+        assert "switchTab" in res.text
+        assert "popstate" in res.text
+
 

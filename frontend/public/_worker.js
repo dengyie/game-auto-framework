@@ -42,8 +42,11 @@ export default {
       }
     }
 
-    // If requesting /dashboard or root, serve index.html
-    if (url.pathname === "/dashboard") {
+    // If requesting /dashboard, root or any valid sub-route tab, serve index.html
+    const VALID_TABS = ["instances", "stream", "teams", "proxies", "accounts", "soak", "agent"];
+    const pathSegments = url.pathname.split("/").filter(Boolean);
+    const lastSeg = pathSegments[pathSegments.length - 1]?.toLowerCase();
+    if (url.pathname === "/dashboard" || VALID_TABS.includes(lastSeg)) {
       return env.ASSETS.fetch(new URL("/", request.url));
     }
 

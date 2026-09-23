@@ -1016,7 +1016,36 @@
     }
     window.showToast = showToast;
 
-    function switchTab(tabId) {
+    const VALID_TABS = ['instances', 'stream', 'teams', 'proxies', 'accounts', 'soak', 'agent'];
+    const TAB_TITLES = {
+      instances: '集群实例监控',
+      stream: '设备实时监控画面',
+      teams: '组队协同拓扑',
+      proxies: '独享代理池',
+      accounts: '账号作息矩阵',
+      soak: '24h 极限压测与时序遥测',
+      agent: 'AI 智能 Agent 与指令下发'
+    };
+
+    function parseTabFromUrl() {
+      // 1. Check URL Hash (e.g. #stream, #/stream)
+      const rawHash = (window.location.hash || '').replace(/^#\/?/, '').trim().toLowerCase();
+      if (rawHash && VALID_TABS.includes(rawHash)) {
+        return rawHash;
+      }
+      // 2. Check URL Pathname (e.g. /stream, /instances)
+      const pathSegments = window.location.pathname.split('/').filter(Boolean);
+      const lastSeg = pathSegments[pathSegments.length - 1]?.toLowerCase();
+      if (lastSeg && VALID_TABS.includes(lastSeg)) {
+        return lastSeg;
+      }
+      return 'instances';
+    }
+
+    function switchTab(tabId, pushHistory = true) {
+      if (!VALID_TABS.includes(tabId)) {
+        tabId = 'instances';
+      }
       currentTab = tabId;
       document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
       document.querySelectorAll('.tab-pane').forEach(pane => pane.classList.remove('active'));
@@ -1025,6 +1054,15 @@
       const activePane = document.getElementById('pane-' + tabId);
       if (activePane) activePane.classList.add('active');
 
+      document.title = `Game Auto Framework - ${TAB_TITLES[tabId] || '控制台'}`;
+
+      if (pushHistory) {
+        const targetHash = '#' + tabId;
+        if (window.location.hash !== targetHash) {
+          history.pushState({ tab: tabId }, '', targetHash);
+        }
+      }
+
       if (tabId === 'stream') {
         activateLiveStream();
       } else {
@@ -1032,6 +1070,19 @@
       }
     }
     window.switchTab = switchTab;
+
+    // Browser navigation forward/back history support
+    window.addEventListener('popstate', (e) => {
+      const tab = (e.state && e.state.tab && VALID_TABS.includes(e.state.tab)) ? e.state.tab : parseTabFromUrl();
+      switchTab(tab, false);
+    });
+
+    window.addEventListener('hashchange', () => {
+      const tab = parseTabFromUrl();
+      if (tab !== currentTab) {
+        switchTab(tab, false);
+      }
+    });
 
     // Stream Controls
     function setStreamViewMode(mode) {
@@ -1970,6 +2021,12 @@
 
     // Startup
     window.addEventListener('DOMContentLoaded', () => {
+      // 1. Initialize Active Tab from Sub-URL or Hash
+      const initTab = parseTabFromUrl();
+      switchTab(initTab, false);
+      // Ensure initial history state is populated so browser back button returns correctly
+      history.replaceState({ tab: initTab }, '', '#' + initTab);
+
       refreshAll();
       loadPluginsAndPipelines();
       setupAutoRefresh();
