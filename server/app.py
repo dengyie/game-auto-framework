@@ -4,6 +4,7 @@ Provides REST endpoints to start/stop pipelines, monitor progress, chain routine
 """
 
 from __future__ import annotations
+from contextlib import asynccontextmanager
 import csv
 import json
 import os
@@ -30,10 +31,29 @@ from cluster.account import AccountConfig, AccountMatrix, AccountStatus
 from cluster.supervisor import ClusterSupervisor
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """FastAPI standard lifespan context manager: manages startup and graceful shutdown."""
+    init_default_cluster()
+    yield
+    with GLOBAL_TASK._lock:
+        GLOBAL_TASK.stop_event.set()
+        GLOBAL_TASK.running = False
+        if GLOBAL_TASK.device:
+            try:
+                GLOBAL_TASK.device.disconnect()
+            except Exception:
+                pass
+            GLOBAL_TASK.device = None
+    SUPERVISOR.stop()
+    CLUSTER_POOL.stop_all()
+
+
 app = FastAPI(
     title="game-auto-framework VPS API",
     version="0.1.0",
     description="Cross-platform game automation engine and remote invocation middleware",
+    lifespan=lifespan,
 )
 
 
@@ -74,52 +94,87 @@ class TaskState:
         self.start_time: float = 0.0
         self.last_tick_time: float = 0.0
         self.error: Optional[str] = None
+        self._lock: threading.RLock = threading.RLock()
+
+    def stop(self) -> None:
+        """Thread-safe task stopping and device disconnection."""
+        with self._lock:
+            self.running = False
+            self.stop_event.set()
+            if self.routine_executor:
+                self.routine_executor.stop()
+            th = self.thread
+            self.thread = None
+        if th and th.is_alive():
+            th.join(timeout=1.0)
+        with self._lock:
+            self.status = PipelineStatus.IDLE
+            if self.device:
+                try:
+                    self.device.disconnect()
+                except Exception:
+                    pass
+                self.device = None
 
 
 GLOBAL_TASK = TaskState()
 
 
 def _background_worker() -> None:
+    with GLOBAL_TASK._lock:
+        is_routine = GLOBAL_TASK.is_routine
+        p_name = GLOBAL_TASK.pipeline_name
+        routine_name = GLOBAL_TASK.routine_executor.config.name if GLOBAL_TASK.routine_executor else "None"
     logger.info(
-        f"Background worker started (is_routine={GLOBAL_TASK.is_routine}, target={GLOBAL_TASK.pipeline_name or (GLOBAL_TASK.routine_executor.config.name if GLOBAL_TASK.routine_executor else 'None')})"
+        f"Background worker started (is_routine={is_routine}, target={p_name or routine_name})"
     )
     try:
-        while GLOBAL_TASK.running and not GLOBAL_TASK.stop_event.is_set():
-            if GLOBAL_TASK.is_routine and GLOBAL_TASK.routine_executor:
-                routine_status = GLOBAL_TASK.routine_executor.tick()
-                GLOBAL_TASK.last_tick_time = time.time()
-
-                if routine_status in (
-                    RoutineStatus.COMPLETED,
-                    RoutineStatus.FAILED,
-                    RoutineStatus.CIRCUIT_BROKEN,
-                    RoutineStatus.STOPPED,
-                ):
-                    logger.info(f"Task routine finished with status: {routine_status.value}")
-                    GLOBAL_TASK.running = False
-                    if routine_status == RoutineStatus.COMPLETED:
-                        GLOBAL_TASK.status = PipelineStatus.COMPLETED
-                    else:
-                        GLOBAL_TASK.status = PipelineStatus.FAILED
-                        GLOBAL_TASK.error = GLOBAL_TASK.routine_executor.error_message
+        while True:
+            with GLOBAL_TASK._lock:
+                if not GLOBAL_TASK.running or GLOBAL_TASK.stop_event.is_set():
                     break
-            elif GLOBAL_TASK.plugin and GLOBAL_TASK.pipeline_name:
-                status = GLOBAL_TASK.plugin.run_pipeline_step(GLOBAL_TASK.pipeline_name)
-                GLOBAL_TASK.status = status
-                GLOBAL_TASK.last_tick_time = time.time()
+                is_routine = GLOBAL_TASK.is_routine
+                routine_exec = GLOBAL_TASK.routine_executor
+                plugin = GLOBAL_TASK.plugin
+                pipeline_name = GLOBAL_TASK.pipeline_name
 
-                if status in (PipelineStatus.COMPLETED, PipelineStatus.FAILED, PipelineStatus.TIMEOUT):
-                    logger.info(f"Single pipeline finished with status: {status.value}")
-                    GLOBAL_TASK.running = False
-                    break
+            if is_routine and routine_exec:
+                routine_status = routine_exec.tick()
+                with GLOBAL_TASK._lock:
+                    GLOBAL_TASK.last_tick_time = time.time()
+                    if routine_status in (
+                        RoutineStatus.COMPLETED,
+                        RoutineStatus.FAILED,
+                        RoutineStatus.CIRCUIT_BROKEN,
+                        RoutineStatus.STOPPED,
+                    ):
+                        logger.info(f"Task routine finished with status: {routine_status.value}")
+                        GLOBAL_TASK.running = False
+                        if routine_status == RoutineStatus.COMPLETED:
+                            GLOBAL_TASK.status = PipelineStatus.COMPLETED
+                        else:
+                            GLOBAL_TASK.status = PipelineStatus.FAILED
+                            GLOBAL_TASK.error = routine_exec.error_message
+                        break
+            elif plugin and pipeline_name:
+                status = plugin.run_pipeline_step(pipeline_name)
+                with GLOBAL_TASK._lock:
+                    GLOBAL_TASK.status = status
+                    GLOBAL_TASK.last_tick_time = time.time()
+                    if status in (PipelineStatus.COMPLETED, PipelineStatus.FAILED, PipelineStatus.TIMEOUT):
+                        logger.info(f"Single pipeline finished with status: {status.value}")
+                        GLOBAL_TASK.running = False
+                        break
 
             GLOBAL_TASK.stop_event.wait(0.2)
     except Exception as e:
         logger.error(f"Background worker encountered unexpected error: {e}")
-        GLOBAL_TASK.status = PipelineStatus.FAILED
-        GLOBAL_TASK.error = str(e)
+        with GLOBAL_TASK._lock:
+            GLOBAL_TASK.status = PipelineStatus.FAILED
+            GLOBAL_TASK.error = str(e)
     finally:
-        GLOBAL_TASK.running = False
+        with GLOBAL_TASK._lock:
+            GLOBAL_TASK.running = False
 
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -185,84 +240,100 @@ def get_plugin_pipelines(plugin_id: str) -> Dict[str, Any]:
 @app.head("/api/v1/status")
 def get_status() -> Dict[str, Any]:
     """Check VPS engine health, operating system, and task state."""
-    current_node = None
-    history = []
-    if GLOBAL_TASK.plugin:
-        history = GLOBAL_TASK.plugin.context.history
+    with GLOBAL_TASK._lock:
+        current_node = None
+        history = []
+        if GLOBAL_TASK.plugin:
+            history = GLOBAL_TASK.plugin.context.history
 
-    active_pipeline = GLOBAL_TASK.pipeline_name
-    if GLOBAL_TASK.is_routine and GLOBAL_TASK.routine_executor:
-        active_pipeline = GLOBAL_TASK.routine_executor.current_pipeline_name
-        if active_pipeline and GLOBAL_TASK.plugin:
-            p = GLOBAL_TASK.plugin.get_pipeline(active_pipeline)
+        active_pipeline = GLOBAL_TASK.pipeline_name
+        if GLOBAL_TASK.is_routine and GLOBAL_TASK.routine_executor:
+            active_pipeline = GLOBAL_TASK.routine_executor.current_pipeline_name
+            if active_pipeline and GLOBAL_TASK.plugin:
+                p = GLOBAL_TASK.plugin.get_pipeline(active_pipeline)
+                if p:
+                    current_node = p.current_node_name
+        elif GLOBAL_TASK.plugin and GLOBAL_TASK.pipeline_name:
+            p = GLOBAL_TASK.plugin.get_pipeline(GLOBAL_TASK.pipeline_name)
             if p:
                 current_node = p.current_node_name
-    elif GLOBAL_TASK.plugin and GLOBAL_TASK.pipeline_name:
-        p = GLOBAL_TASK.plugin.get_pipeline(GLOBAL_TASK.pipeline_name)
-        if p:
-            current_node = p.current_node_name
 
-    routine_progress = GLOBAL_TASK.routine_executor.get_progress() if GLOBAL_TASK.routine_executor else None
+        routine_progress = GLOBAL_TASK.routine_executor.get_progress() if GLOBAL_TASK.routine_executor else None
+        is_running = GLOBAL_TASK.running
+        is_routine = GLOBAL_TASK.is_routine
+        pipeline_status = GLOBAL_TASK.status.value
+        active_plugin = GLOBAL_TASK.plugin.plugin_id if GLOBAL_TASK.plugin else None
+        uptime_sec = int(time.time() - GLOBAL_TASK.start_time) if is_running else 0
+        device_connected = GLOBAL_TASK.device.is_connected() if GLOBAL_TASK.device else False
+        device_type = GLOBAL_TASK.device.platform_type if GLOBAL_TASK.device else None
+        error_msg = GLOBAL_TASK.error
 
     return {
         "engine": "game-auto-framework",
         "version": "0.1.0",
         "platform": sys.platform,
-        "is_running": GLOBAL_TASK.running,
-        "is_routine": GLOBAL_TASK.is_routine,
-        "pipeline_status": GLOBAL_TASK.status.value,
-        "active_plugin": GLOBAL_TASK.plugin.plugin_id if GLOBAL_TASK.plugin else None,
+        "is_running": is_running,
+        "is_routine": is_routine,
+        "pipeline_status": pipeline_status,
+        "active_plugin": active_plugin,
         "active_pipeline": active_pipeline,
         "current_node": current_node,
-        "uptime_sec": int(time.time() - GLOBAL_TASK.start_time) if GLOBAL_TASK.running else 0,
+        "uptime_sec": uptime_sec,
         "history_count": len(history),
-        "device_connected": GLOBAL_TASK.device.is_connected() if GLOBAL_TASK.device else False,
-        "device_type": GLOBAL_TASK.device.platform_type if GLOBAL_TASK.device else None,
+        "device_connected": device_connected,
+        "device_type": device_type,
         "routine_progress": routine_progress,
-        "error": GLOBAL_TASK.error,
+        "error": error_msg,
     }
 
 
 @app.post("/api/v1/tasks/start")
 def start_task(req: StartTaskRequest) -> Dict[str, Any]:
     """Start a single automation pipeline in background."""
-    if GLOBAL_TASK.running:
-        raise HTTPException(status_code=409, detail="A task or routine is already running. Stop it before starting a new one.")
+    with GLOBAL_TASK._lock:
+        if GLOBAL_TASK.running:
+            raise HTTPException(status_code=409, detail="A task or routine is already running. Stop it before starting a new one.")
 
-    logger.info(f"Received start task request: plugin={req.plugin}, pipeline={req.pipeline}, device={req.device_type}")
+        logger.info(f"Received start task request: plugin={req.plugin}, pipeline={req.pipeline}, device={req.device_type}")
 
-    # 1. Initialize Device
-    try:
-        device = DeviceFactory.create(device_type=req.device_type, serial=req.device_serial)
-        device.connect()
-        GLOBAL_TASK.device = device
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to initialize device: {e}")
+        # 1. Initialize Device
+        try:
+            device = DeviceFactory.create(device_type=req.device_type, serial=req.device_serial)
+            device.connect()
+            GLOBAL_TASK.device = device
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to initialize device: {e}")
 
-    # 2. Initialize Plugin
-    try:
-        plugin = GamePluginRegistry.create(req.plugin, device=device)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Unsupported or failed to load plugin: {req.plugin} ({e})")
+        # 2. Initialize Plugin
+        try:
+            plugin = GamePluginRegistry.create(req.plugin, device=device)
+        except Exception as e:
+            if GLOBAL_TASK.device:
+                try:
+                    GLOBAL_TASK.device.disconnect()
+                except Exception:
+                    pass
+                GLOBAL_TASK.device = None
+            raise HTTPException(status_code=400, detail=f"Unsupported or failed to load plugin: {req.plugin} ({e})")
 
-    # Seed variables into plugin context
-    for k, v in req.variables.items():
-        plugin.context.variables[k] = v
+        # Seed variables into plugin context
+        for k, v in req.variables.items():
+            plugin.context.variables[k] = v
 
-    GLOBAL_TASK.plugin = plugin
-    GLOBAL_TASK.pipeline_name = req.pipeline
-    GLOBAL_TASK.routine_executor = None
-    GLOBAL_TASK.is_routine = False
-    GLOBAL_TASK.running = True
-    GLOBAL_TASK.status = PipelineStatus.RUNNING
-    GLOBAL_TASK.start_time = time.time()
-    GLOBAL_TASK.error = None
-    GLOBAL_TASK.stop_event.clear()
+        GLOBAL_TASK.plugin = plugin
+        GLOBAL_TASK.pipeline_name = req.pipeline
+        GLOBAL_TASK.routine_executor = None
+        GLOBAL_TASK.is_routine = False
+        GLOBAL_TASK.running = True
+        GLOBAL_TASK.status = PipelineStatus.RUNNING
+        GLOBAL_TASK.start_time = time.time()
+        GLOBAL_TASK.error = None
+        GLOBAL_TASK.stop_event.clear()
 
-    # 3. Launch daemon thread worker
-    worker_thread = threading.Thread(target=_background_worker, daemon=True)
-    GLOBAL_TASK.thread = worker_thread
-    worker_thread.start()
+        # 3. Launch daemon thread worker
+        worker_thread = threading.Thread(target=_background_worker, daemon=True)
+        GLOBAL_TASK.thread = worker_thread
+        worker_thread.start()
 
     return {
         "status": "started",
@@ -275,57 +346,64 @@ def start_task(req: StartTaskRequest) -> Dict[str, Any]:
 @app.post("/api/v1/tasks/start-routine")
 def start_routine(req: StartRoutineRequest) -> Dict[str, Any]:
     """Start an ordered routine chain of pipelines in background."""
-    if GLOBAL_TASK.running:
-        raise HTTPException(status_code=409, detail="A task or routine is already running. Stop it before starting a new one.")
+    with GLOBAL_TASK._lock:
+        if GLOBAL_TASK.running:
+            raise HTTPException(status_code=409, detail="A task or routine is already running. Stop it before starting a new one.")
 
-    logger.info(
-        f"Received start routine request: plugin={req.plugin}, routine={req.routine_name}, "
-        f"pipelines={req.pipelines}, device={req.device_type}"
-    )
+        logger.info(
+            f"Received start routine request: plugin={req.plugin}, routine={req.routine_name}, "
+            f"pipelines={req.pipelines}, device={req.device_type}"
+        )
 
-    # 1. Initialize Device
-    try:
-        device = DeviceFactory.create(device_type=req.device_type, serial=req.device_serial)
-        device.connect()
-        GLOBAL_TASK.device = device
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to initialize device: {e}")
+        # 1. Initialize Device
+        try:
+            device = DeviceFactory.create(device_type=req.device_type, serial=req.device_serial)
+            device.connect()
+            GLOBAL_TASK.device = device
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to initialize device: {e}")
 
-    # 2. Initialize Plugin
-    try:
-        plugin = GamePluginRegistry.create(req.plugin, device=device)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Unsupported or failed to load plugin: {req.plugin} ({e})")
+        # 2. Initialize Plugin
+        try:
+            plugin = GamePluginRegistry.create(req.plugin, device=device)
+        except Exception as e:
+            if GLOBAL_TASK.device:
+                try:
+                    GLOBAL_TASK.device.disconnect()
+                except Exception:
+                    pass
+                GLOBAL_TASK.device = None
+            raise HTTPException(status_code=400, detail=f"Unsupported or failed to load plugin: {req.plugin} ({e})")
 
-    # Seed variables into plugin context
-    for k, v in req.variables.items():
-        plugin.context.variables[k] = v
+        # Seed variables into plugin context
+        for k, v in req.variables.items():
+            plugin.context.variables[k] = v
 
-    # 3. Initialize Routine Executor
-    config = RoutineConfig(
-        name=req.routine_name,
-        pipelines=req.pipelines,
-        stop_on_failure=req.stop_on_failure,
-        max_anti_bot_fails=req.max_anti_bot_fails,
-        retry_pipeline_times=req.retry_pipeline_times,
-    )
-    executor = TaskRoutineExecutor(plugin=plugin, config=config)
-    executor.start()
+        # 3. Initialize Routine Executor
+        config = RoutineConfig(
+            name=req.routine_name,
+            pipelines=req.pipelines,
+            stop_on_failure=req.stop_on_failure,
+            max_anti_bot_fails=req.max_anti_bot_fails,
+            retry_pipeline_times=req.retry_pipeline_times,
+        )
+        executor = TaskRoutineExecutor(plugin=plugin, config=config)
+        executor.start()
 
-    GLOBAL_TASK.plugin = plugin
-    GLOBAL_TASK.pipeline_name = None
-    GLOBAL_TASK.routine_executor = executor
-    GLOBAL_TASK.is_routine = True
-    GLOBAL_TASK.running = True
-    GLOBAL_TASK.status = PipelineStatus.RUNNING
-    GLOBAL_TASK.start_time = time.time()
-    GLOBAL_TASK.error = None
-    GLOBAL_TASK.stop_event.clear()
+        GLOBAL_TASK.plugin = plugin
+        GLOBAL_TASK.pipeline_name = None
+        GLOBAL_TASK.routine_executor = executor
+        GLOBAL_TASK.is_routine = True
+        GLOBAL_TASK.running = True
+        GLOBAL_TASK.status = PipelineStatus.RUNNING
+        GLOBAL_TASK.start_time = time.time()
+        GLOBAL_TASK.error = None
+        GLOBAL_TASK.stop_event.clear()
 
-    # 4. Launch daemon thread worker
-    worker_thread = threading.Thread(target=_background_worker, daemon=True)
-    GLOBAL_TASK.thread = worker_thread
-    worker_thread.start()
+        # 4. Launch daemon thread worker
+        worker_thread = threading.Thread(target=_background_worker, daemon=True)
+        GLOBAL_TASK.thread = worker_thread
+        worker_thread.start()
 
     return {
         "status": "started",
@@ -339,44 +417,98 @@ def start_routine(req: StartRoutineRequest) -> Dict[str, Any]:
 @app.get("/api/v1/tasks/routine-status")
 def get_routine_status() -> Dict[str, Any]:
     """Fetch current progress and stats of the active or latest routine."""
-    if not GLOBAL_TASK.routine_executor:
-        return {"status": "no_active_routine"}
-    return GLOBAL_TASK.routine_executor.get_progress()
+    with GLOBAL_TASK._lock:
+        if not GLOBAL_TASK.routine_executor:
+            return {"status": "no_active_routine"}
+        return GLOBAL_TASK.routine_executor.get_progress()
 
 
 @app.post("/api/v1/tasks/stop")
 def stop_task() -> Dict[str, Any]:
     """Stop the currently active task or routine."""
-    if not GLOBAL_TASK.running and not GLOBAL_TASK.thread:
-        return {"status": "already_stopped"}
+    with GLOBAL_TASK._lock:
+        if not GLOBAL_TASK.running and not GLOBAL_TASK.thread:
+            return {"status": "already_stopped"}
 
-    GLOBAL_TASK.stop_event.set()
-    GLOBAL_TASK.running = False
-    if GLOBAL_TASK.routine_executor:
-        GLOBAL_TASK.routine_executor.stop()
-
-    if GLOBAL_TASK.thread:
-        GLOBAL_TASK.thread.join(timeout=1.0)
-        GLOBAL_TASK.thread = None
-
-    GLOBAL_TASK.status = PipelineStatus.IDLE
+    GLOBAL_TASK.stop()
     logger.info("Active task/routine stopped via API call")
     return {"status": "stopped"}
 
 
-@app.get("/api/v1/screenshot")
-@app.head("/api/v1/screenshot")
-def get_screenshot() -> Response:
-    """Fetch live screenshot frame from active device."""
-    if not GLOBAL_TASK.device:
+_OFFLINE_FRAME_CACHE: Optional[bytes] = None
+_OFFLINE_FRAME_LOCK = threading.Lock()
+
+
+def _get_default_offline_frame() -> bytes:
+    """Return a cached placeholder JPEG frame without leaking device allocations."""
+    global _OFFLINE_FRAME_CACHE
+    if _OFFLINE_FRAME_CACHE is not None:
+        return _OFFLINE_FRAME_CACHE
+
+    with _OFFLINE_FRAME_LOCK:
+        if _OFFLINE_FRAME_CACHE is not None:
+            return _OFFLINE_FRAME_CACHE
         dev = DeviceFactory.create("virtual")
         dev.connect()
-        data = dev.screencap()
-        return Response(content=data, media_type="image/jpeg")
+        _OFFLINE_FRAME_CACHE = dev.screencap()
+        dev.disconnect()
+        return _OFFLINE_FRAME_CACHE
 
+
+def _capture_any_connected_frame() -> Optional[bytes]:
+    """Use the first instance that is already connected.
+
+    The generic screenshot must not call ``adb connect`` on a down tunnel.
+    inst_01 is the live MuMu, and a failed connect there used to 500 the
+    dashboard even though the virtual instances still had frames.
+    """
+    for inst in CLUSTER_POOL.list_instances():
+        dev = getattr(inst, "device", None)
+        if dev is None or not dev.is_connected():
+            continue
+        try:
+            return inst.screencap()
+        except Exception as exc:
+            logger.debug(f"Skipping frame from [{inst.instance_id}]: {exc}")
+    return None
+
+
+def image_media_type(frame_bytes: bytes) -> str:
+    """Sniff the container. ADB screencap is PNG; VirtualDevice frames are JPEG."""
+    if frame_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if frame_bytes.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    return "application/octet-stream"
+
+
+@app.get("/api/v1/screenshot")
+@app.head("/api/v1/screenshot")
+def get_screenshot(instance_id: Optional[str] = None) -> Response:
+    """Fetch live screenshot frame from active task or a target cluster instance."""
+    ensure_cluster_initialized()
+    frame_bytes = None
     try:
-        frame_bytes = GLOBAL_TASK.device.screencap()
-        return Response(content=frame_bytes, media_type="image/jpeg")
+        if instance_id:
+            inst = CLUSTER_POOL.get_instance(instance_id)
+            if inst:
+                frame_bytes = inst.screencap()
+            else:
+                raise HTTPException(status_code=404, detail=f"Instance [{instance_id}] not found.")
+
+        with GLOBAL_TASK._lock:
+            if not frame_bytes and GLOBAL_TASK.device and GLOBAL_TASK.running:
+                frame_bytes = GLOBAL_TASK.device.screencap()
+
+        if not frame_bytes:
+            frame_bytes = _capture_any_connected_frame()
+
+        if not frame_bytes:
+            frame_bytes = _get_default_offline_frame()
+
+        return Response(content=frame_bytes, media_type=image_media_type(frame_bytes))
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to capture frame: {e}")
 
@@ -390,26 +522,21 @@ def _generate_mjpeg_frames(instance_id: Optional[str] = None, fps: float = 10.0)
                 inst = CLUSTER_POOL.get_instance(instance_id)
                 if inst:
                     frame_bytes = inst.screencap()
-            if not frame_bytes:
-                if GLOBAL_TASK.device:
+            with GLOBAL_TASK._lock:
+                if not frame_bytes and GLOBAL_TASK.device and GLOBAL_TASK.running:
                     frame_bytes = GLOBAL_TASK.device.screencap()
-                else:
-                    instances = CLUSTER_POOL.list_instances()
-                    if instances:
-                        frame_bytes = instances[0].screencap()
-                    else:
-                        dev = DeviceFactory.create("virtual")
-                        dev.connect()
-                        frame_bytes = dev.screencap()
+            if not frame_bytes:
+                frame_bytes = _capture_any_connected_frame() or _get_default_offline_frame()
         except Exception as e:
             logger.debug(f"Frame capture error in stream: {e}")
             time.sleep(interval)
             continue
 
         if frame_bytes:
+            content_type = image_media_type(frame_bytes).encode("ascii")
             yield (
                 b"--frame\r\n"
-                b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n"
+                b"Content-Type: " + content_type + b"\r\n\r\n" + frame_bytes + b"\r\n"
             )
         time.sleep(interval)
 
@@ -473,11 +600,21 @@ def init_default_cluster(config_path: Optional[str] = None) -> None:
     if len(CLUSTER_POOL.get_instances()) == 0 and accounts:
         for i, acc in enumerate(accounts, start=1):
             inst_id = f"inst_{i:02d}"
+            # inst_01 is the live MuMu 12 on home-win. The port is a
+            # localhost reverse tunnel (KeepMuMuAdbTunnel), not a public ADB.
+            if i == 1:
+                device_type = "adb"
+                serial = "127.0.0.1:16384"
+                name = "MuMu12-home-win"
+            else:
+                device_type = "virtual"
+                serial = None
+                name = acc.role_name or f"Inst_{i}"
             inst = CLUSTER_POOL.register_instance(
                 instance_id=inst_id,
-                device_type="virtual",
-                serial=None,
-                name=f"{acc.role_name or f'Inst_{i}'}",
+                device_type=device_type,
+                serial=serial,
+                name=name,
             )
             inst.connect()
             inst.assigned_account_id = acc.account_id
@@ -519,13 +656,10 @@ def init_default_cluster(config_path: Optional[str] = None) -> None:
         logger.info("Started ClusterSupervisor watchdog")
 
 
-@app.on_event("startup")
-def on_startup() -> None:
-    init_default_cluster()
-
-
-# Trigger initial state creation
-init_default_cluster()
+def ensure_cluster_initialized(config_path: Optional[str] = None) -> None:
+    """Lazily ensure default cluster instances, accounts, and proxies are ready."""
+    if len(CLUSTER_POOL.get_instances()) == 0:
+        init_default_cluster(config_path)
 
 
 class RegisterInstanceRequest(BaseModel):
@@ -593,6 +727,7 @@ class RegisterAccountRequest(BaseModel):
 @app.get("/api/v1/cluster/status")
 def get_cluster_status() -> Dict[str, Any]:
     """Retrieve full cluster status: instances, teams, proxies, accounts, and supervisor."""
+    ensure_cluster_initialized()
     return {
         "cluster": CLUSTER_POOL.get_cluster_stats(),
         "proxy": PROXY_MANAGER.get_proxy_stats(),
@@ -616,12 +751,14 @@ def register_instance(req: RegisterInstanceRequest) -> Dict[str, Any]:
 @app.get("/api/v1/cluster/instances")
 def list_cluster_instances() -> List[Dict[str, Any]]:
     """List all registered instances with their health metrics."""
+    ensure_cluster_initialized()
     return [inst.get_health() for inst in CLUSTER_POOL.list_instances()]
 
 
 @app.get("/api/v1/cluster/instances/{instance_id}")
 def get_cluster_instance(instance_id: str) -> Dict[str, Any]:
     """Get diagnostic health of a specific instance."""
+    ensure_cluster_initialized()
     inst = CLUSTER_POOL.get_instance(instance_id)
     if not inst:
         raise HTTPException(status_code=404, detail=f"Instance [{instance_id}] not found.")
@@ -686,7 +823,7 @@ def get_instance_screenshot(instance_id: str) -> Response:
         raise HTTPException(status_code=404, detail=f"Instance [{instance_id}] not found.")
     try:
         data = inst.screencap()
-        return Response(content=data, media_type="image/jpeg")
+        return Response(content=data, media_type=image_media_type(data))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Screenshot failed on [{instance_id}]: {e}")
 

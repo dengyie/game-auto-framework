@@ -20,6 +20,86 @@ def _get_coord_center(coords: Dict[str, Any], domain: str, key: str, default: Tu
     return float(box[0] + box[2] / 2), float(box[1] + box[3] / 2)
 
 
+def _remember_ocr_point(ctx: PipelineContext, item: Any, prefix: str) -> None:
+    """Store a point in the same space ``device.click`` already expects.
+
+    Pipeline frames are resized to the 1280x720 baseline before OCR.
+    ``AdbDevice.click`` scales that baseline up to the touch viewport, so
+    unmapping here would shrink the point a second time and miss.
+    """
+    ctx.variables[f"{prefix}_point"] = (float(item.center[0]), float(item.center[1]))
+    ctx.variables[f"{prefix}_text"] = item.text
+
+
+_NOVICE_QUEST_WORDS = ("主线", "任务", "前往", "寻找", "回复", "禀报")
+_DIALOG_WORDS = ("跳过", "继续", "点击继续")
+_BATTLE_COMMAND_WORDS = ("攻击", "法术", "特技", "防御", "逃跑")
+_BATTLE_ENDED_WORDS = ("胜利", "战斗胜利", "战斗结束")
+_REWARD_WORDS = ("领取", "奖励")
+
+
+def _ocr_any(frame: Any, candidates: Tuple[str, ...]) -> Optional[Any]:
+    if frame is None:
+        return None
+    from core.ocr.engine import OCREngine
+
+    engine = OCREngine.get_instance()
+    if engine.is_mock:
+        return None
+    found = engine.find_any_text(frame, list(candidates), threshold=70.0)
+    if found is None:
+        return None
+    return found[1]
+
+
+def _ocr_items(frame: Any) -> list:
+    if frame is None:
+        return []
+    from core.ocr.engine import OCREngine
+
+    engine = OCREngine.get_instance()
+    if engine.is_mock:
+        return []
+    return engine.recognize(frame)
+
+
+def _dialog_item(frame: Any) -> Optional[Any]:
+    """Dialogue on this client is a long line in the lower band, not a fixed button.
+
+    A labeled control such as 跳过 wins. Otherwise use the longest line in the
+    lower middle of the frame. Battle commands and the two lower corners are
+    excluded: those corners opened 好友 and 福利 during the live run.
+    """
+    labeled = _ocr_any(frame, _DIALOG_WORDS)
+    if labeled is not None:
+        return labeled
+    if _ocr_any(frame, _BATTLE_COMMAND_WORDS) is not None:
+        return None
+    shape = getattr(frame, "shape", None)
+    if not shape or len(shape) < 2:
+        return None
+    height, width = int(shape[0]), int(shape[1])
+    candidates = []
+    for item in _ocr_items(frame):
+        text = str(getattr(item, "text", "")).strip()
+        center = getattr(item, "center", None)
+        if not center or len(text) < 4:
+            continue
+        cx, cy = float(center[0]), float(center[1])
+        if cy < height * 0.62:
+            continue
+        if cx < width * 0.15 or cx > width * 0.85:
+            continue
+        candidates.append(item)
+    if not candidates:
+        return None
+    return max(candidates, key=lambda item: len(str(item.text).strip()))
+
+
+def _is_virtual_device(ctx: PipelineContext) -> bool:
+    return getattr(ctx.device, "platform_type", "") == "virtual"
+
+
 # ==============================================================================
 # 1. 组队抓鬼 (Team Ghost Hunting) Handlers
 # ==============================================================================
@@ -416,10 +496,26 @@ def click_confirm_role_and_sect(ctx: PipelineContext, act: NodeAction) -> None:
 
 
 def find_novice_quest_tracker(ctx: PipelineContext, frame: Any, rec: NodeRecognition) -> bool:
-    return ctx.variables.get("has_novice_quest", True)
+    """True only when this frame shows a quest tracker. No frame is not a quest."""
+    if _is_virtual_device(ctx):
+        return bool(ctx.variables.get("has_novice_quest", True))
+    item = _ocr_any(frame, _NOVICE_QUEST_WORDS)
+    if item is None:
+        return False
+    _remember_ocr_point(ctx, item, "novice_quest")
+    return True
 
 
 def click_novice_quest_tracker(ctx: PipelineContext, act: NodeAction) -> None:
+    """Tap the tracker text from the last frame. Do not declare the dialog open."""
+    point = ctx.variables.get("novice_quest_point")
+    if point and ctx.device:
+        ctx.device.click(point[0], point[1])
+        ctx.variables["novice_quest_tapped"] = True
+        return
+    if not _is_virtual_device(ctx):
+        logger.info("Novice tracker click skipped: no text point on the last frame.")
+        return
     coords = ctx.variables.get("coordinates", {})
     cx, cy = _get_coord_center(coords, "novice", "btn_novice_track", (1120, 195, 120, 35))
     if ctx.device:
@@ -429,10 +525,25 @@ def click_novice_quest_tracker(ctx: PipelineContext, act: NodeAction) -> None:
 
 
 def is_story_dialog_open(ctx: PipelineContext, frame: Any, rec: NodeRecognition) -> bool:
-    return ctx.variables.get("story_dialog_open", True)
+    if _is_virtual_device(ctx):
+        return bool(ctx.variables.get("story_dialog_open", True))
+    item = _dialog_item(frame)
+    if item is None:
+        ctx.variables["story_dialog_open"] = False
+        return False
+    _remember_ocr_point(ctx, item, "novice_dialog")
+    ctx.variables["story_dialog_open"] = True
+    return True
 
 
 def click_skip_or_advance_dialog(ctx: PipelineContext, act: NodeAction) -> None:
+    """Advance the line that is on screen. The next frame decides combat or reward."""
+    if not _is_virtual_device(ctx):
+        point = ctx.variables.get("novice_dialog_point")
+        if point and ctx.device:
+            ctx.device.click(point[0], point[1])
+        ctx.variables["story_dialog_open"] = False
+        return
     coords = ctx.variables.get("coordinates", {})
     cx, cy = _get_coord_center(coords, "novice", "btn_skip_dialog", (1180, 50, 60, 30))
     if ctx.device:
@@ -441,7 +552,6 @@ def click_skip_or_advance_dialog(ctx: PipelineContext, act: NodeAction) -> None:
         cx2, cy2 = _get_coord_center(coords, "novice", "btn_dialog_next", (950, 480, 120, 40))
         ctx.device.click(cx2, cy2)
     ctx.variables["story_dialog_open"] = False
-    # Check if this dialogue leads to combat or directly to reward
     if ctx.variables.get("leads_to_combat", True):
         ctx.variables["novice_in_battle"] = True
     else:
@@ -449,10 +559,24 @@ def click_skip_or_advance_dialog(ctx: PipelineContext, act: NodeAction) -> None:
 
 
 def is_novice_battle_active(ctx: PipelineContext, frame: Any, rec: NodeRecognition) -> bool:
-    return ctx.variables.get("novice_in_battle", False)
+    if _is_virtual_device(ctx):
+        return bool(ctx.variables.get("novice_in_battle", False))
+    item = _ocr_any(frame, _BATTLE_COMMAND_WORDS)
+    if item is None:
+        return False
+    _remember_ocr_point(ctx, item, "novice_battle")
+    ctx.variables["novice_in_battle"] = True
+    return True
 
 
 def handle_novice_combat_actions(ctx: PipelineContext, act: NodeAction) -> None:
+    """Tap the battle command OCR found. Ending the fight belongs to a later frame."""
+    if not _is_virtual_device(ctx):
+        point = ctx.variables.get("novice_battle_point")
+        if point and ctx.device:
+            ctx.device.click(point[0], point[1])
+            ctx.variables["novice_battle_auto_engaged"] = True
+        return
     coords = ctx.variables.get("coordinates", {})
     cx, cy = _get_coord_center(coords, "battle", "btn_auto_battle", (1120, 620, 60, 40))
     if ctx.device:
@@ -464,7 +588,14 @@ def handle_novice_combat_actions(ctx: PipelineContext, act: NodeAction) -> None:
 
 
 def is_novice_battle_ended(ctx: PipelineContext, frame: Any, rec: NodeRecognition) -> bool:
-    return ctx.variables.get("novice_battle_ended", True)
+    if _is_virtual_device(ctx):
+        return bool(ctx.variables.get("novice_battle_ended", True))
+    if _ocr_any(frame, _BATTLE_COMMAND_WORDS) is not None:
+        ctx.variables["novice_battle_ended"] = False
+        return False
+    ended = _ocr_any(frame, _BATTLE_ENDED_WORDS) is not None or _ocr_any(frame, _NOVICE_QUEST_WORDS) is not None
+    ctx.variables["novice_battle_ended"] = ended
+    return ended
 
 
 def increment_novice_progress(ctx: PipelineContext, act: NodeAction) -> None:
@@ -475,10 +606,27 @@ def increment_novice_progress(ctx: PipelineContext, act: NodeAction) -> None:
 
 
 def is_novice_reward_available(ctx: PipelineContext, frame: Any, rec: NodeRecognition) -> bool:
-    return ctx.variables.get("novice_reward_ready", True)
+    if _is_virtual_device(ctx):
+        return bool(ctx.variables.get("novice_reward_ready", True))
+    item = _ocr_any(frame, _REWARD_WORDS)
+    if item is None:
+        ctx.variables["novice_reward_ready"] = False
+        return False
+    _remember_ocr_point(ctx, item, "novice_reward")
+    ctx.variables["novice_reward_ready"] = True
+    return True
 
 
 def click_claim_novice_reward(ctx: PipelineContext, act: NodeAction) -> None:
+    """Claim only a reward control that the current frame actually showed."""
+    if not _is_virtual_device(ctx):
+        point = ctx.variables.get("novice_reward_point")
+        if not point or not ctx.device:
+            return
+        ctx.device.click(point[0], point[1])
+        ctx.variables["novice_reward_ready"] = False
+        ctx.variables["novice_reward_claimed"] = True
+        return
     coords = ctx.variables.get("coordinates", {})
     cx, cy = _get_coord_center(coords, "novice", "btn_claim_reward", (640, 480, 100, 40))
     if ctx.device:

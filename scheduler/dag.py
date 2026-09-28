@@ -300,8 +300,11 @@ class DAGPipeline:
             if branch_transitioned:
                 return self.status
 
-            # Standard candidate next transitions
-            action_is_interactive = current_node.action.type in ("click", "swipe", "key")
+            # Standard candidate next transitions.
+            # A custom action may have just tapped the screen. The frame passed
+            # into this tick is from before that tap, so it cannot prove the
+            # next node. Built-in click/swipe/key already waited for this reason.
+            action_is_interactive = current_node.action.type in ("click", "swipe", "key", "custom")
             for next_name in current_node.next_nodes:
                 next_node = self.nodes.get(next_name)
                 if not next_node:

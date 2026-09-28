@@ -118,11 +118,13 @@ def test_mcp_tool_calls_execution():
         "params": {"name": "get_screenshot", "arguments": {}},
     })
     assert res["id"] == 23
-    data = json.loads(res["result"]["content"][0]["text"])
-    assert "format" in data
+    content = res["result"]["content"]
+    data = json.loads(content[0]["text"])
     assert data["format"] == "jpeg"
-    assert "base64_full" in data
-    assert len(data["base64_full"]) > 100
+    assert "base64_full" not in data
+    image = next(item for item in content if item["type"] == "image")
+    assert image["mimeType"] == "image/jpeg"
+    assert len(image["data"]) > 100
 
     # 5. get_account_status
     res = server.handle_request({

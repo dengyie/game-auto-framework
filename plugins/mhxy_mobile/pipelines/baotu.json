@@ -78,7 +78,46 @@
         "target_pos": [1180, 640]
       },
       "next": [
+        "probe_map_in_bag"
+      ],
+      "timeout_sec": 20.0
+    },
+    {
+      "name": "probe_map_in_bag",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "probe_map_in_bag"
+      },
+      "action": {
+        "type": "none"
+      },
+      "branches": [
+        {
+          "condition": "variables.get('has_treasure_map', False)",
+          "next": "select_treasure_map"
+        },
+        {
+          "condition": "not variables.get('has_treasure_map', False) and variables.get('treasure_map_buys_this_dig', 0) < variables.get('max_treasure_maps_per_dig', 1) and variables.get('treasure_map_buy_attempts', 0) < variables.get('max_treasure_map_buy_attempts', 3)",
+          "next": "buy_map_to_dig"
+        }
+      ],
+      "next": [
         "select_treasure_map"
+      ],
+      "timeout_sec": 15.0
+    },
+    {
+      "name": "buy_map_to_dig",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "needs_treasure_map"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "buy_treasure_map"
+      },
+      "next": [
+        "probe_map_in_bag"
       ],
       "timeout_sec": 20.0
     },

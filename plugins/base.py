@@ -80,3 +80,11 @@ class BaseGamePlugin(abc.ABC):
             frame = None
 
         return pipeline.tick(self.context, frame=frame)
+
+    def on_pipeline_completed(self, pipeline_name: str, account_id: Optional[str] = None) -> None:
+        """Lifecycle hook invoked when a pipeline finishes successfully."""
+        pass
+
+    def on_routine_completed(self, routine_name: str, account_id: Optional[str] = None) -> None:
+        """Lifecycle hook invoked when an entire routine finishes successfully."""
+        pass

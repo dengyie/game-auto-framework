@@ -18,7 +18,9 @@
     "btn_talk_bartender": [930, 430, 80, 30],
     "btn_accept_baotu": [930, 430, 80, 30],
     "bag_first_slot": [850, 220, 55, 55],
-    "btn_use_item": [720, 520, 80, 35]
+    "bag_roi": [760, 180, 470, 470],
+    "btn_use_item": [720, 520, 80, 35],
+    "btn_buy_map": [1010, 656, 90, 36]
   },
   "yuntong": {
     "btn_talk_zheng": [930, 430, 80, 30],

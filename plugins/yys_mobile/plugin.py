@@ -49,3 +49,35 @@ class YYSMobilePlugin(BaseGamePlugin):
         context.register_action("resolve_bounty_invite", h.resolve_bounty_invite)
 
         logger.info(f"Registered all domain custom operators for {self.plugin_id}")
+
+    def on_pipeline_completed(self, pipeline_name: str, account_id: Optional[str] = None) -> None:
+        """Record Onmyoji-specific rewards (coins, medals)."""
+        if not account_id:
+            return
+        try:
+            from cluster.account import AccountMatrix
+            matrix = AccountMatrix.get_instance()
+            matrix.record_income(
+                account_id=account_id,
+                gold=1500,
+                silver=0,
+                active_points=15,
+            )
+        except Exception as ex:
+            logger.debug(f"Failed to record yys pipeline income: {ex}")
+
+    def on_routine_completed(self, routine_name: str, account_id: Optional[str] = None) -> None:
+        """Record Onmyoji-specific routine rewards."""
+        if not account_id:
+            return
+        try:
+            from cluster.account import AccountMatrix
+            matrix = AccountMatrix.get_instance()
+            matrix.record_income(
+                account_id=account_id,
+                gold=6000,
+                silver=0,
+                active_points=60,
+            )
+        except Exception as ex:
+            logger.debug(f"Failed to record yys routine income: {ex}")

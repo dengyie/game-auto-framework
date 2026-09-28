@@ -254,19 +254,12 @@ class DeviceInstance:
                             self.completed_cycles += 1
                             if r_status == RoutineStatus.COMPLETED:
                                 self.pipeline_status = PipelineStatus.COMPLETED
-                                if self.assigned_account_id:
+                                if self.assigned_account_id and plugin:
                                     try:
-                                        from cluster.account import AccountMatrix
-                                        matrix = AccountMatrix.get_instance()
-                                        matrix.record_income(
-                                            account_id=self.assigned_account_id,
-                                            gold=9000,
-                                            silver=700000,
-                                            active_points=80,
-                                        )
-                                        matrix.save_to_json("config/accounts.json")
+                                        r_name = routine_exec.config.name if routine_exec else "routine"
+                                        plugin.on_routine_completed(r_name, self.assigned_account_id)
                                     except Exception as ex:
-                                        logger.debug(f"Failed to record routine income: {ex}")
+                                        logger.debug(f"Plugin on_routine_completed hook error: {ex}")
                             else:
                                 self.pipeline_status = PipelineStatus.FAILED
                                 self.error_message = routine_exec.error_message
@@ -283,19 +276,11 @@ class DeviceInstance:
                         ):
                             self.status = InstanceStatus.IDLE
                             self.completed_cycles += 1
-                            if p_status == PipelineStatus.COMPLETED and self.assigned_account_id:
+                            if p_status == PipelineStatus.COMPLETED and self.assigned_account_id and plugin:
                                 try:
-                                    from cluster.account import AccountMatrix
-                                    matrix = AccountMatrix.get_instance()
-                                    matrix.record_income(
-                                        account_id=self.assigned_account_id,
-                                        gold=2200,
-                                        silver=180000,
-                                        active_points=20,
-                                    )
-                                    matrix.save_to_json("config/accounts.json")
+                                    plugin.on_pipeline_completed(p_name, self.assigned_account_id)
                                 except Exception as ex:
-                                    logger.debug(f"Failed to record pipeline income: {ex}")
+                                    logger.debug(f"Plugin on_pipeline_completed hook error: {ex}")
                     return p_status
             except Exception as e:
                 logger.error(f"Instance [{self.instance_id}] tick failed: {e}")

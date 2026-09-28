@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import json
 import sys
+import threading
 from typing import Any, Dict, List, Optional
 from loguru import logger
 
@@ -34,10 +35,30 @@ def tool_list_instances() -> Dict[str, Any]:
     }
 
 
+_SCREENSHOT_CACHE: Optional[bytes] = None
+_SCREENSHOT_CACHE_LOCK = threading.Lock()
+
+
+def _cached_virtual_frame() -> bytes:
+    """One cached placeholder frame. Never allocate a new device per screenshot call."""
+    global _SCREENSHOT_CACHE
+    if _SCREENSHOT_CACHE is not None:
+        return _SCREENSHOT_CACHE
+    with _SCREENSHOT_CACHE_LOCK:
+        if _SCREENSHOT_CACHE is not None:
+            return _SCREENSHOT_CACHE
+        vdev = DeviceFactory.create("virtual")
+        vdev.connect()
+        try:
+            _SCREENSHOT_CACHE = vdev.screencap()
+        finally:
+            vdev.disconnect()
+        return _SCREENSHOT_CACHE
+
+
 def tool_get_screenshot(instance_id: Optional[str] = None) -> Dict[str, Any]:
-    """Capture real-time screenshot from a target instance or virtual device."""
+    """Capture real-time screenshot from a target instance or cached virtual frame."""
     pool = InstancePool.get_pool()
-    dev = None
     target_id = instance_id or "default"
 
     if instance_id:
@@ -49,7 +70,6 @@ def tool_get_screenshot(instance_id: Optional[str] = None) -> Dict[str, Any]:
         except Exception as e:
             return {"error": f"Failed to capture screencap from [{instance_id}]: {e}"}
     else:
-        # Fallback to first available instance or ad-hoc device
         instances = pool.list_instances()
         if instances:
             try:
@@ -59,20 +79,21 @@ def tool_get_screenshot(instance_id: Optional[str] = None) -> Dict[str, Any]:
                 return {"error": f"Failed to capture from cluster instance: {e}"}
         else:
             try:
-                vdev = DeviceFactory.create("virtual")
-                vdev.connect()
-                raw_bytes = vdev.screencap()
-                target_id = "virtual_adhoc"
+                raw_bytes = _cached_virtual_frame()
+                target_id = "virtual_cached"
             except Exception as e:
                 return {"error": f"Failed to capture virtual screencap: {e}"}
 
-    b64_data = base64.b64encode(raw_bytes).decode("ascii")
+    from server.app import image_media_type
+
+    media_type = image_media_type(raw_bytes)
+    image_format = "png" if media_type == "image/png" else "jpeg" if media_type == "image/jpeg" else "bin"
     return {
         "instance_id": target_id,
-        "format": "jpeg",
+        "format": image_format,
+        "mime_type": media_type,
         "size_bytes": len(raw_bytes),
-        "base64_image": b64_data[:64] + "...[truncated]",
-        "base64_full": b64_data,
+        "_image_bytes": raw_bytes,
     }
 
 
@@ -390,17 +411,31 @@ class NativeMCPServer:
 
             try:
                 result_data = handler(arguments)
+                image_bytes = None
+                if isinstance(result_data, dict):
+                    image_bytes = result_data.pop("_image_bytes", None)
                 text_content = json.dumps(result_data, ensure_ascii=False, indent=2)
+                content: List[Dict[str, Any]] = [
+                    {
+                        "type": "text",
+                        "text": text_content,
+                    }
+                ]
+                if image_bytes:
+                    content.append(
+                        {
+                            "type": "image",
+                            "data": base64.b64encode(image_bytes).decode("ascii"),
+                            "mimeType": result_data.get("mime_type", "application/octet-stream")
+                            if isinstance(result_data, dict)
+                            else "application/octet-stream",
+                        }
+                    )
                 return {
                     "jsonrpc": "2.0",
                     "id": req_id,
                     "result": {
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": text_content,
-                            }
-                        ],
+                        "content": content,
                         "isError": "error" in result_data if isinstance(result_data, dict) else False,
                     },
                 }

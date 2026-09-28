@@ -4,6 +4,7 @@ Supports network TCP/IP connection to remote emulators, cloud phones, and physic
 """
 
 from __future__ import annotations
+import re
 import struct
 import subprocess
 import time
@@ -14,6 +15,46 @@ import numpy as np
 
 from core.device.base import BaseDevice
 from core.input.driver import BaseInputDriver
+
+
+def parse_display_resolution(wm_size_out: str, dumpsys_display_out: str) -> Optional[Tuple[int, int]]:
+    """Return the touch viewport size, not the portrait physical panel size.
+
+    ``deviceWidth`` / ``deviceHeight`` on the current viewport match both the
+    screencap and ``input tap``. ``wm size`` on MuMu 12 stays portrait
+    (900x1600) even while that viewport is landscape (1600x900).
+    """
+    viewport = re.search(
+        r"deviceWidth=(\d+),\s*deviceHeight=(\d+)",
+        dumpsys_display_out,
+    )
+    if viewport:
+        width, height = int(viewport.group(1)), int(viewport.group(2))
+        if width > 0 and height > 0:
+            return width, height
+
+    frame = re.search(
+        r"logicalFrame=Rect\(\s*0\s*,\s*0\s*-\s*(\d+)\s*,\s*(\d+)\s*\)",
+        dumpsys_display_out,
+    )
+    if frame:
+        width, height = int(frame.group(1)), int(frame.group(2))
+        if width > 0 and height > 0:
+            return width, height
+
+    sizes = re.findall(r"(\d+)x(\d+)", wm_size_out)
+    if not sizes:
+        return None
+    width, height = int(sizes[-1][0]), int(sizes[-1][1])
+    landscape = (
+        "mCurrentOrientation=1" in dumpsys_display_out
+        or "mCurrentOrientation=3" in dumpsys_display_out
+    )
+    if landscape and width < height:
+        width, height = height, width
+    if width > 0 and height > 0:
+        return width, height
+    return None
 
 
 class AdbInputDriver(BaseInputDriver):
@@ -145,33 +186,39 @@ class AdbDevice(BaseDevice):
         return False
 
     def _probe_device_specs(self) -> None:
-        """Probe physical screen resolution and configuration from ADB."""
+        """Probe the input viewport. Prefer dumpsys viewport over wm size.
+
+        MuMu 12 reports ``wm size`` as 900x1600 while the touch viewport and
+        screencap are 1600x900. Swapping on orientation alone still trusts the
+        wrong pair when DisplayDeviceInfo and the viewport disagree.
+        """
         try:
-            import re
-            cmd = ["adb", "-s", self.serial, "shell", "wm", "size"]
-            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5)
-            out = res.stdout.decode("utf-8", errors="ignore")
-            m = re.findall(r"(\d+)x(\d+)", out)
-            if m:
-                w, h = int(m[-1][0]), int(m[-1][1])
-                cmd_ori = ["adb", "-s", self.serial, "shell", "dumpsys", "display"]
-                res_ori = subprocess.run(cmd_ori, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5)
-                ori_out = res_ori.stdout.decode("utf-8", errors="ignore")
-                is_landscape = "mCurrentOrientation=1" in ori_out or "mCurrentOrientation=3" in ori_out
-                if is_landscape and w < h:
-                    w, h = h, w
-                self.actual_resolution = (w, h)
+            wm_out = subprocess.run(
+                ["adb", "-s", self.serial, "shell", "wm", "size"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=5,
+            ).stdout.decode("utf-8", errors="ignore")
+            display_out = subprocess.run(
+                ["adb", "-s", self.serial, "shell", "dumpsys", "display"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=5,
+            ).stdout.decode("utf-8", errors="ignore")
+            parsed = parse_display_resolution(wm_out, display_out)
+            if parsed:
+                self.actual_resolution = parsed
                 self._update_scales()
                 logger.info(f"Detected ADB device [{self.serial}] resolution: {self.actual_resolution}")
         except Exception as e:
             logger.warning(f"Failed to probe device specs: {e}")
 
     def disconnect(self) -> None:
-        if ":" in self.serial and self._connected:
-            try:
-                subprocess.run(["adb", "disconnect", self.serial], timeout=5)
-            except Exception:
-                pass
+        """Drop this driver's session without tearing down a shared adb connection.
+
+        ``adb disconnect host:port`` removes the device for every process on
+        this adb server, including the cluster instance that shares the tunnel.
+        """
         self._connected = False
 
     def map_coordinates(self, x: float, y: float) -> Tuple[float, float]:
@@ -196,7 +243,7 @@ class AdbDevice(BaseDevice):
 
         cmd = ["adb", "-s", self.serial, "exec-out", "screencap", "-p"]
         try:
-            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=6)
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
             if res.returncode == 0 and len(res.stdout) > 0:
                 raw_bytes = res.stdout
                 if len(raw_bytes) >= 24 and raw_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
@@ -237,7 +284,7 @@ class AdbDevice(BaseDevice):
 
         cmd = ["adb", "-s", self.serial, "exec-out", "screencap", "-p"]
         try:
-            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=6)
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
             if res.returncode == 0 and len(res.stdout) > 0:
                 raw_bytes = res.stdout
                 if len(raw_bytes) >= 24 and raw_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
@@ -283,7 +330,7 @@ class AdbDevice(BaseDevice):
         mex, mey = self.map_coordinates(ex, ey)
         tx1, ty1 = generate_gaussian_target(msx, msy, 4.0, 4.0)
         tx2, ty2 = generate_gaussian_target(mex, mey, 4.0, 4.0)
-        duration_ms = int(steps * 15)
+        duration_ms = min(1500, int(steps * 15))
         self._driver.swipe(tx1, ty1, tx2, ty2, duration_ms=duration_ms)
         time.sleep(0.15)
         return [(tx1, ty1), (tx2, ty2)]

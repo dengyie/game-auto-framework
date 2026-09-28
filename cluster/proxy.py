@@ -231,36 +231,45 @@ class ProxyManager:
     def check_proxy_health(self, proxy_id: str, timeout: float = 2.0) -> bool:
         """
         Test proxy socket reachability and calculate latency.
+        Socket network I/O executes outside of self._lock to prevent blocking cluster APIs.
         """
         with self._lock:
             proxy = self._proxies.get(proxy_id)
             if not proxy:
                 return False
+            host = proxy.host
+            port = proxy.port
 
-            t0 = time.time()
-            try:
-                with socket.create_connection((proxy.host, proxy.port), timeout=timeout):
-                    latency = (time.time() - t0) * 1000.0
-                    proxy.latency_ms = latency
-                    proxy.last_checked_at = time.time()
-                    proxy.status = ProxyStatus.ACTIVE
-                    proxy.error_message = None
-                    return True
-            except Exception as e:
-                proxy.last_checked_at = time.time()
-                proxy.status = ProxyStatus.ERROR
-                proxy.error_message = str(e)
-                proxy.latency_ms = -1.0
-                logger.warning(f"Proxy [{proxy_id}] health check failed: {e}")
-                return False
+        t0 = time.time()
+        is_active = False
+        err_msg = None
+        latency = -1.0
+        try:
+            with socket.create_connection((host, port), timeout=timeout):
+                latency = (time.time() - t0) * 1000.0
+                is_active = True
+        except Exception as e:
+            err_msg = str(e)
+            logger.warning(f"Proxy [{proxy_id}] health check failed: {e}")
+
+        with self._lock:
+            p = self._proxies.get(proxy_id)
+            if p:
+                p.last_checked_at = time.time()
+                p.status = ProxyStatus.ACTIVE if is_active else ProxyStatus.ERROR
+                p.latency_ms = latency
+                p.error_message = err_msg
+        return is_active
 
     def check_all_proxies(self, timeout: float = 2.0) -> Dict[str, bool]:
-        """Run health check across all proxies."""
+        """Run health check across all proxies without holding global lock across requests."""
         with self._lock:
-            results = {}
-            for pid in list(self._proxies.keys()):
-                results[pid] = self.check_proxy_health(pid, timeout=timeout)
-            return results
+            pids = list(self._proxies.keys())
+
+        results = {}
+        for pid in pids:
+            results[pid] = self.check_proxy_health(pid, timeout=timeout)
+        return results
 
     def get_proxy_stats(self) -> Dict[str, Any]:
         """Summary of proxy pool capacity and allocations."""

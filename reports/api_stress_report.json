@@ -3,43 +3,43 @@
   "total_requests": 4,
   "total_success": 4,
   "total_failed": 0,
-  "duration_sec": 0.02,
-  "qps": 225.35,
-  "overall_p50_ms": 15.36,
-  "overall_p95_ms": 17.22,
-  "overall_p99_ms": 17.22,
+  "duration_sec": 1.2,
+  "qps": 3.34,
+  "overall_p50_ms": 7.75,
+  "overall_p95_ms": 1194.62,
+  "overall_p99_ms": 1194.62,
   "endpoints": {
     "/health": {
       "total": 1,
       "success_rate_pct": 100.0,
-      "mean_ms": 1.2,
-      "p50_ms": 1.2,
-      "p95_ms": 1.2,
-      "p99_ms": 1.2
+      "mean_ms": 1.39,
+      "p50_ms": 1.39,
+      "p95_ms": 1.39,
+      "p99_ms": 1.39
     },
     "/api/v1/plugins": {
       "total": 1,
       "success_rate_pct": 100.0,
-      "mean_ms": 17.22,
-      "p50_ms": 17.22,
-      "p95_ms": 17.22,
-      "p99_ms": 17.22
+      "mean_ms": 7.75,
+      "p50_ms": 7.75,
+      "p95_ms": 7.75,
+      "p99_ms": 7.75
     },
     "/api/v1/status": {
       "total": 1,
       "success_rate_pct": 100.0,
-      "mean_ms": 0.48,
-      "p50_ms": 0.48,
-      "p95_ms": 0.48,
-      "p99_ms": 0.48
+      "mean_ms": 0.39,
+      "p50_ms": 0.39,
+      "p95_ms": 0.39,
+      "p99_ms": 0.39
     },
     "/api/v1/screenshot": {
       "total": 1,
       "success_rate_pct": 100.0,
-      "mean_ms": 15.36,
-      "p50_ms": 15.36,
-      "p95_ms": 15.36,
-      "p99_ms": 15.36
+      "mean_ms": 1194.62,
+      "p50_ms": 1194.62,
+      "p95_ms": 1194.62,
+      "p99_ms": 1194.62
     },
     "/dashboard": {
       "total": 0,
@@ -50,6 +50,8 @@
       "p99_ms": 0.0
     }
   },
-  "passed_sla": true,
-  "sla_violations": []
+  "passed_sla": false,
+  "sla_violations": [
+    "P95 latency 1194.62ms > 1000ms SLA limit"
+  ]
 }

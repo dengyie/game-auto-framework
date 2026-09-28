@@ -332,27 +332,33 @@ class AccountMatrix:
         with self._lock:
             return [a.to_dict() for a in self._accounts.values()]
 
-    def save_to_json(self, file_path: str) -> bool:
-        """Persist all registered account data to JSON file."""
+    def save_to_json(self, file_path: str = "config/accounts.json") -> bool:
+        """Persist all registered account data to JSON file (resolves relative to project root)."""
         with self._lock:
             try:
                 data = [a.model_dump() for a in self._accounts.values()]
                 path = Path(file_path)
+                if not path.is_absolute():
+                    project_root = Path(__file__).resolve().parent.parent
+                    path = project_root / path
                 path.parent.mkdir(parents=True, exist_ok=True)
                 with open(path, "w", encoding="utf-8") as f:
                     json.dump(data, f, ensure_ascii=False, indent=2)
-                logger.info(f"Saved {len(data)} accounts to {file_path}")
+                logger.info(f"Saved {len(data)} accounts to {path}")
                 return True
             except Exception as e:
                 logger.error(f"Failed to save accounts to {file_path}: {e}")
                 return False
 
-    def load_from_json(self, file_path: str) -> int:
-        """Load and register account configurations from JSON file."""
+    def load_from_json(self, file_path: str = "config/accounts.json") -> int:
+        """Load and register account configurations from JSON file (resolves relative to project root)."""
         with self._lock:
             path = Path(file_path)
+            if not path.is_absolute():
+                project_root = Path(__file__).resolve().parent.parent
+                path = project_root / path
             if not path.exists():
-                logger.warning(f"Account file {file_path} does not exist.")
+                logger.warning(f"Account file {path} does not exist.")
                 return 0
             try:
                 with open(path, "r", encoding="utf-8") as f:
@@ -362,7 +368,7 @@ class AccountMatrix:
                     cfg = AccountConfig(**item)
                     self._accounts[cfg.account_id] = cfg
                     loaded += 1
-                logger.info(f"Loaded {loaded} accounts from {file_path}")
+                logger.info(f"Loaded {loaded} accounts from {path}")
                 return loaded
             except Exception as e:
                 logger.error(f"Failed to load accounts from {file_path}: {e}")

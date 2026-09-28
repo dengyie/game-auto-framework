@@ -14,8 +14,9 @@ from core.cv.battle import BattleDetector
 from core.ocr.engine import OCREngine
 from core.vlm import LiveVLMDefenseSolver
 from plugins.base import BaseGamePlugin
-from plugins.mhxy_mobile.custom.quiz import QuizSolver
+from plugins.mhxy_mobile.custom.quiz_solver import QuizSolver
 from plugins.mhxy_mobile.custom import handlers as h
+from plugins.mhxy_mobile.custom import daily_handlers as dh
 from scheduler.dag import NodeAction, NodeRecognition, PipelineContext
 
 
@@ -50,6 +51,7 @@ class MHXYMobilePlugin(BaseGamePlugin):
         context.register_recognition("find_baotu_dialog", self._find_baotu_dialog)
         context.register_action("increment_baotu_count", self._increment_baotu_count)
         context.register_recognition("has_treasure_map_in_bag", self._has_treasure_map_in_bag)
+        context.register_recognition("probe_map_in_bag", self._probe_map_in_bag)
         context.register_recognition("is_dig_completed", self._is_dig_completed)
         context.register_action("increment_dig_count", self._increment_dig_count)
 
@@ -132,6 +134,29 @@ class MHXYMobilePlugin(BaseGamePlugin):
         context.register_recognition("is_novice_reward_available", h.is_novice_reward_available)
         context.register_action("click_claim_novice_reward", h.click_claim_novice_reward)
         context.register_action("finish_novice_tasks", h.finish_novice_tasks)
+
+        # 11. Autonomous Multi-Task Daily DAG (daily_dailies) Handlers
+        context.register_recognition("classify_screen", dh.classify_screen)
+        context.register_recognition("always_true", dh.always_true)
+        context.register_action("noop_wait", dh.noop_wait)
+        context.register_action("do_battle_step", dh.do_battle_step)
+        context.register_action("dismiss_popups", dh.dismiss_popups)
+        context.register_action("open_activity_panel", dh.open_activity_panel)
+        context.register_action("handle_activity_panel", dh.handle_activity_panel)
+        context.register_action("click_shimen_board", dh.click_shimen_board)
+        context.register_action("click_shop_buy", dh.click_shop_buy)
+        context.register_action("click_turnin", dh.click_turnin)
+        context.register_action("click_use_item", dh.click_use_item)
+        context.register_action("click_deposit_confirm", dh.click_deposit_confirm)
+        context.register_action("click_dialog_choice", dh.click_dialog_choice)
+        context.register_action("handle_quiz", dh.handle_quiz)
+        context.register_action("click_task_tracker", dh.click_task_tracker)
+        context.register_action("wait_walking", dh.wait_walking)
+        context.register_action("close_panel_and_finish", dh.close_panel_and_finish)
+        # Dig-time treasure-map acquisition (bugfix 2026-09-29): maps are bought one
+        # at a time, at the moment of digging, never stockpiled.
+        context.register_recognition("needs_treasure_map", dh.needs_treasure_map)
+        context.register_action("buy_treasure_map", dh.buy_treasure_map)
 
     # --- Shimen Handlers ---
 
@@ -216,13 +241,47 @@ class MHXYMobilePlugin(BaseGamePlugin):
         logger.info(f"Baotu battle progress: [{ctx.variables['baotu_count']}/10]")
 
     def _has_treasure_map_in_bag(self, ctx: PipelineContext, frame: Any, rec: NodeRecognition) -> bool:
+        # Live: read the bag grid for a 藏宝图 row. On virtual devices (tests / demo)
+        # fall back to the variable so the dig flow stays deterministic.
+        if getattr(self.device, "platform_type", "") != "virtual" and frame is not None and not self.ocr_engine.is_mock:
+            roi = self.coordinates.get("baotu", {}).get("bag_roi")
+            res = self.ocr_engine.find_text(frame, "藏宝图", roi=tuple(roi) if roi else None, threshold=60.0)
+            if res:
+                ctx.variables["has_treasure_map"] = True
+                return True
+            # No map row read in the bag: the dig phase must buy one at dig time.
+            ctx.variables["has_treasure_map"] = False
+            return False
         return ctx.variables.get("has_treasure_map", True)
+
+    def _probe_map_in_bag(self, ctx: PipelineContext, frame: Any, rec: NodeRecognition) -> bool:
+        """Gate recognizer for the dig loop: refresh the bag-map state, then branch.
+
+        The DAG can only branch on variables (not on a recognizer result), and a
+        False recognition would stall the node. So this probe runs the same bag
+        read as ``_has_treasure_map_in_bag``, stores its verdict in
+        ``has_treasure_map``, but always returns True to let the branches run:
+        map present -> dig it; absent -> buy exactly one at dig time. The verdict
+        is always written back so the branch's default never matters (an unset
+        variable must not silently fall into the buy path).
+        """
+        self._has_treasure_map_in_bag(ctx, frame, rec)
+        ctx.variables["has_treasure_map"] = ctx.variables.get("has_treasure_map", True)
+        return True
 
     def _is_dig_completed(self, ctx: PipelineContext, frame: Any, rec: NodeRecognition) -> bool:
         return ctx.variables.get("dig_completed", True)
 
     def _increment_dig_count(self, ctx: PipelineContext, act: NodeAction) -> None:
         ctx.variables["dig_count"] = ctx.variables.get("dig_count", 0) + 1
+        # Each dig consumes one map, so grant a fresh one-map purchase budget and a
+        # fresh no-shop attempt budget for the next dig. Deliberately do NOT clear
+        # ``has_treasure_map`` here: the dig loop re-probes the bag right after this
+        # node and only buys when the bag is genuinely empty. Forcing it False here
+        # made every dig buy a map even when thief loot had already filled the bag
+        # (review 2026-09-29: stray 购买 click per dig).
+        ctx.variables["treasure_map_buys_this_dig"] = 0
+        ctx.variables["treasure_map_buy_attempts"] = 0
         logger.info(f"Treasure map dig progress: [{ctx.variables['dig_count']}/10]")
 
     # --- Yuntong Handlers ---
@@ -296,3 +355,35 @@ class MHXYMobilePlugin(BaseGamePlugin):
         ctx.variables["anti_bot_popup_active"] = False
         ctx.variables["anti_bot_prompt_text"] = ""
         logger.info("Anti-bot verification handled and dismissed.")
+
+    def on_pipeline_completed(self, pipeline_name: str, account_id: Optional[str] = None) -> None:
+        """Record MHXY-specific pipeline completion rewards."""
+        if not account_id:
+            return
+        try:
+            from cluster.account import AccountMatrix
+            matrix = AccountMatrix.get_instance()
+            matrix.record_income(
+                account_id=account_id,
+                gold=2200,
+                silver=180000,
+                active_points=20,
+            )
+        except Exception as ex:
+            logger.debug(f"Failed to record mhxy pipeline income: {ex}")
+
+    def on_routine_completed(self, routine_name: str, account_id: Optional[str] = None) -> None:
+        """Record MHXY-specific routine completion rewards."""
+        if not account_id:
+            return
+        try:
+            from cluster.account import AccountMatrix
+            matrix = AccountMatrix.get_instance()
+            matrix.record_income(
+                account_id=account_id,
+                gold=9000,
+                silver=700000,
+                active_points=80,
+            )
+        except Exception as ex:
+            logger.debug(f"Failed to record mhxy routine income: {ex}")
