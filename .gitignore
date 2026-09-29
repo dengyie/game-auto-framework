@@ -28,4 +28,5 @@ htmlcov/
 venv/
 *.log
 local_cache/
+logs/
 .wrangler/

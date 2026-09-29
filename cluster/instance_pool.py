@@ -336,7 +336,13 @@ class DeviceInstance:
                 dev = self.device
 
         # Capture frame outside state lock
-        data = dev.screencap()
+        if hasattr(dev, "screencap"):
+            try:
+                data = dev.screencap(raw=raw)
+            except TypeError:
+                data = dev.screencap()
+        else:
+            raise RuntimeError(f"Device for instance [{self.instance_id}] does not support screencap")
         with self._state_lock:
             self.last_heartbeat_time = time.time()
         return data

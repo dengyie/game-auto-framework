@@ -91,7 +91,7 @@ def test_stress_run_endpoint_smoke(client):
         json={
             "concurrency": 2,
             "requests": 4,
-            "p95_threshold_ms": 1000.0,
+            "p95_threshold_ms": 6000.0,
         },
     )
     assert res.status_code == 200

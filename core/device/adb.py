@@ -7,6 +7,7 @@ from __future__ import annotations
 import re
 import struct
 import subprocess
+import threading
 import time
 from typing import Any, Optional, Tuple
 import cv2
@@ -121,6 +122,11 @@ class AdbDevice(BaseDevice):
         self._inv_scale_x: float = 1.0
         self._inv_scale_y: float = 1.0
         self._driver = AdbInputDriver(self.serial)
+        self._cap_lock = threading.Lock()
+        self._last_cap_time: float = 0.0
+        self._last_raw_bytes: Optional[bytes] = None
+        self._last_baseline_bytes: Optional[bytes] = None
+        self._cap_cache_ttl: float = 0.35
 
     def _update_scales(self) -> None:
         """Precalculate and cache coordinate scaling ratios to eliminate repeated division."""
@@ -220,6 +226,10 @@ class AdbDevice(BaseDevice):
         this adb server, including the cluster instance that shares the tunnel.
         """
         self._connected = False
+        with self._cap_lock:
+            self._last_raw_bytes = None
+            self._last_baseline_bytes = None
+            self._last_cap_time = 0.0
 
     def map_coordinates(self, x: float, y: float) -> Tuple[float, float]:
         """Map canonical baseline coordinates (e.g. 1280x720) to physical device coordinates using cached scale ratios."""
@@ -233,82 +243,103 @@ class AdbDevice(BaseDevice):
             return x, y
         return x * self._inv_scale_x, y * self._inv_scale_y
 
+    def _capture_raw_png_locked(self) -> bytes:
+        """
+        Execute raw ADB screencap under self._cap_lock with thread-safe TTL caching.
+        Must be called while holding self._cap_lock.
+        """
+        now = time.time()
+        if self._last_raw_bytes and (now - self._last_cap_time) < self._cap_cache_ttl:
+            return self._last_raw_bytes
+
+        cmd = ["adb", "-s", self.serial, "exec-out", "screencap", "-p"]
+        try:
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=15)
+            if res.returncode == 0 and len(res.stdout) > 0:
+                raw_bytes = res.stdout
+                if len(raw_bytes) >= 24 and raw_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+                    pw, ph = struct.unpack(">II", raw_bytes[16:24])
+                    if self.actual_resolution != (pw, ph):
+                        self.actual_resolution = (pw, ph)
+                        self._update_scales()
+
+                self._last_raw_bytes = raw_bytes
+                self._last_baseline_bytes = None  # Invalidate baseline cache on new raw capture
+                self._last_cap_time = time.time()
+                return raw_bytes
+            raise RuntimeError(f"screencap failed with code {res.returncode}: {res.stderr.decode()}")
+        except Exception as e:
+            logger.error(f"ADB screencap failed on [{self.serial}]: {e}")
+            now = time.time()
+            if self._last_raw_bytes and (now - self._last_cap_time) < self._cap_cache_ttl:
+                return self._last_raw_bytes
+            raise
+
     def screencap(self, raw: bool = False) -> bytes:
         """
-        Capture screen frame via ADB screencap binary stream.
+        Capture screen frame via ADB screencap binary stream with thread-safe TTL caching.
         If resize_frame_to_baseline is enabled and raw is False, returns frame resized to baseline resolution.
         """
         if not self._connected:
             raise RuntimeError(f"ADB device [{self.serial}] is disconnected")
 
-        cmd = ["adb", "-s", self.serial, "exec-out", "screencap", "-p"]
-        try:
-            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
-            if res.returncode == 0 and len(res.stdout) > 0:
-                raw_bytes = res.stdout
-                if len(raw_bytes) >= 24 and raw_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
-                    pw, ph = struct.unpack(">II", raw_bytes[16:24])
-                    if self.actual_resolution != (pw, ph):
-                        self.actual_resolution = (pw, ph)
-                        self._update_scales()
+        now = time.time()
+        if raw or not self.resize_frame_to_baseline:
+            if self._last_raw_bytes and (now - self._last_cap_time) < self._cap_cache_ttl:
+                return self._last_raw_bytes
+            with self._cap_lock:
+                return self._capture_raw_png_locked()
 
-                if raw or not self.resize_frame_to_baseline:
-                    return raw_bytes
+        # Baseline resolution mode
+        if self._last_baseline_bytes and (now - self._last_cap_time) < self._cap_cache_ttl:
+            return self._last_baseline_bytes
 
-                target_w, target_h = self.resolution
-                # Zero-reencode optimization: if physical resolution matches baseline, return raw PNG bytes directly
-                if self.actual_resolution and self.actual_resolution == (target_w, target_h):
-                    return raw_bytes
+        with self._cap_lock:
+            now = time.time()
+            if self._last_baseline_bytes and (now - self._last_cap_time) < self._cap_cache_ttl:
+                return self._last_baseline_bytes
 
-                if self.actual_resolution and self.actual_resolution != (target_w, target_h):
-                    img = cv2.imdecode(np.frombuffer(raw_bytes, np.uint8), cv2.IMREAD_COLOR)
-                    if img is not None:
-                        resized = cv2.resize(img, (target_w, target_h), interpolation=cv2.INTER_AREA)
-                        success, encoded = cv2.imencode(".png", resized)
-                        if success:
-                            return encoded.tobytes()
+            raw_bytes = self._capture_raw_png_locked()
+            target_w, target_h = self.resolution
 
+            if self.actual_resolution and self.actual_resolution == (target_w, target_h):
+                self._last_baseline_bytes = raw_bytes
                 return raw_bytes
-            raise RuntimeError(f"screencap failed with code {res.returncode}: {res.stderr.decode()}")
-        except Exception as e:
-            logger.error(f"ADB screencap failed on [{self.serial}]: {e}")
-            raise
+
+            img = cv2.imdecode(np.frombuffer(raw_bytes, np.uint8), cv2.IMREAD_COLOR)
+            if img is not None:
+                resized = cv2.resize(img, (target_w, target_h), interpolation=cv2.INTER_AREA)
+                success, encoded = cv2.imencode(".png", resized)
+                if success:
+                    res_bytes = encoded.tobytes()
+                    self._last_baseline_bytes = res_bytes
+                    return res_bytes
+
+            self._last_baseline_bytes = raw_bytes
+            return raw_bytes
 
     def screencap_mat(self, raw: bool = False) -> np.ndarray:
         """
-        Direct frame capture into OpenCV BGR numpy array without re-encoding to PNG.
-        Saves 50~100ms encoding + 30~50ms subsequent decoding.
+        Direct frame capture into OpenCV BGR numpy array reusing unified locked raw capture.
+        Saves redundant adb command dispatch and guarantees thread safety against screencap().
         """
         if not self._connected:
             raise RuntimeError(f"ADB device [{self.serial}] is disconnected")
 
-        cmd = ["adb", "-s", self.serial, "exec-out", "screencap", "-p"]
-        try:
-            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
-            if res.returncode == 0 and len(res.stdout) > 0:
-                raw_bytes = res.stdout
-                if len(raw_bytes) >= 24 and raw_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
-                    pw, ph = struct.unpack(">II", raw_bytes[16:24])
-                    if self.actual_resolution != (pw, ph):
-                        self.actual_resolution = (pw, ph)
-                        self._update_scales()
+        with self._cap_lock:
+            raw_bytes = self._capture_raw_png_locked()
+            img = cv2.imdecode(np.frombuffer(raw_bytes, np.uint8), cv2.IMREAD_COLOR)
+            if img is None:
+                raise RuntimeError("Failed to decode screencap buffer into cv2 image")
 
-                img = cv2.imdecode(np.frombuffer(raw_bytes, np.uint8), cv2.IMREAD_COLOR)
-                if img is None:
-                    raise RuntimeError("Failed to decode screencap buffer into cv2 image")
-
-                if raw or not self.resize_frame_to_baseline:
-                    return img
-
-                target_w, target_h = self.resolution
-                if img.shape[1] != target_w or img.shape[0] != target_h:
-                    img = cv2.resize(img, (target_w, target_h), interpolation=cv2.INTER_AREA)
-
+            if raw or not self.resize_frame_to_baseline:
                 return img
-            raise RuntimeError(f"screencap failed with code {res.returncode}: {res.stderr.decode()}")
-        except Exception as e:
-            logger.error(f"ADB screencap_mat failed on [{self.serial}]: {e}")
-            raise
+
+            target_w, target_h = self.resolution
+            if img.shape[1] != target_w or img.shape[0] != target_h:
+                img = cv2.resize(img, (target_w, target_h), interpolation=cv2.INTER_AREA)
+
+            return img
 
     def screencap_raw(self) -> bytes:
         """Direct raw frame capture without any resolution scaling."""

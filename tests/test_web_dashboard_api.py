@@ -202,3 +202,81 @@ def test_dashboard_sub_urls(client):
         assert "popstate" in res.text
 
 
+def test_video_stream_mjpeg_multipart_and_transcoding(client):
+    """Verify MJPEG streaming endpoint yields compliant multipart chunks and transcodes frames."""
+    # 1. Register test instance
+    client.post("/api/v1/cluster/instances/register", json={"instance_id": "stream_mjpeg_inst", "device_type": "virtual"})
+
+    try:
+        # 2. Test global stream with instance_id query param and max_frames=2
+        res = client.get("/api/v1/stream?instance_id=stream_mjpeg_inst&fps=30&max_frames=2")
+        assert res.status_code == 200
+        assert "multipart/x-mixed-replace" in res.headers["content-type"]
+        assert "boundary=frame" in res.headers["content-type"]
+        assert b"--frame\r\n" in res.content
+        assert b"Content-Type: image/jpeg\r\n\r\n" in res.content
+        assert b"\xff\xd8" in res.content
+
+        # 3. Test cluster instance direct stream with max_frames=2
+        inst_res = client.get("/api/v1/cluster/instances/stream_mjpeg_inst/stream?fps=30&max_frames=2")
+        assert inst_res.status_code == 200
+        assert "multipart/x-mixed-replace" in inst_res.headers["content-type"]
+        assert b"--frame\r\n" in inst_res.content
+        assert b"Content-Type: image/jpeg\r\n\r\n" in inst_res.content
+
+        # 4. Non-existent instance returns 404
+        err_res = client.get("/api/v1/cluster/instances/non_existent_cluster_inst/stream")
+        assert err_res.status_code == 404
+
+        err_res2 = client.get("/api/v1/stream?instance_id=non_existent_cluster_inst")
+        assert err_res2.status_code == 404
+    finally:
+        client.delete("/api/v1/cluster/instances/stream_mjpeg_inst")
+
+
+def test_screenshot_and_stream_instance_isolation(client):
+    """
+    Verify strict isolation between cluster instances.
+    When a requested instance fails or disconnects, it must fall back to the offline placeholder
+    frame rather than bleeding frames from other connected instances.
+    """
+    from unittest.mock import patch
+    from server.app import CLUSTER_POOL
+
+    client.post("/api/v1/cluster/instances/register", json={"instance_id": "inst_iso_active", "device_type": "virtual"})
+    client.post("/api/v1/cluster/instances/register", json={"instance_id": "inst_iso_failing", "device_type": "virtual"})
+
+    try:
+        # Both instances are alive and connected
+        failing_inst = CLUSTER_POOL.get_instance("inst_iso_failing")
+        active_inst = CLUSTER_POOL.get_instance("inst_iso_active")
+        assert failing_inst is not None and active_inst is not None
+
+        # Normal screenshot returns image
+        res_ok = client.get("/api/v1/screenshot?instance_id=inst_iso_failing")
+        assert res_ok.status_code == 200
+
+        # Simulate device failure on inst_iso_failing
+        with patch.object(failing_inst, "screencap", side_effect=RuntimeError("Device unplugged")):
+            # 1. Screenshot should gracefully return offline placeholder frame, NOT inst_iso_active's frame
+            shot_res = client.get("/api/v1/screenshot?instance_id=inst_iso_failing")
+            assert shot_res.status_code == 200
+            assert "image/jpeg" in shot_res.headers["content-type"]
+
+            # Verify the frame returned is indeed the offline frame
+            from server.app import _get_default_offline_frame
+            offline_bytes = _get_default_offline_frame()
+            assert shot_res.content == offline_bytes
+
+            # 2. MJPEG Stream should yield offline placeholder frame without crashing or bleeding
+            stream_res = client.get("/api/v1/stream?instance_id=inst_iso_failing&fps=30&max_frames=1")
+            assert stream_res.status_code == 200
+            assert b"--frame" in stream_res.content
+            # Verify payload inside multipart chunk contains offline frame data
+            assert offline_bytes in stream_res.content
+    finally:
+        client.delete("/api/v1/cluster/instances/inst_iso_active")
+        client.delete("/api/v1/cluster/instances/inst_iso_failing")
+
+
+

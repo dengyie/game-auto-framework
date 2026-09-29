@@ -1139,8 +1139,12 @@
       }
     }
 
+    let streamGeneration = 0;
+
     function cleanupStream() {
+      streamGeneration++;
       if (snapshotTimer) {
+        clearTimeout(snapshotTimer);
         clearInterval(snapshotTimer);
         snapshotTimer = null;
       }
@@ -1191,21 +1195,35 @@
         img.src = getStreamUrl();
       } else {
         updateStreamStatusBadge('SNAPSHOT');
+        let isFetching = false;
+        const currentGen = streamGeneration;
         const fetchSnap = () => {
-          if (!isStreamActive) return;
+          if (!isStreamActive || isFetching || streamGeneration !== currentGen) return;
+          isFetching = true;
           const startT = performance.now();
           const nextImg = new Image();
+          const onDone = () => {
+            isFetching = false;
+            if (isStreamActive && streamGeneration === currentGen) {
+              const interval = Math.max(200, Math.round(1000 / streamFps));
+              snapshotTimer = setTimeout(fetchSnap, interval);
+            }
+          };
           nextImg.onload = () => {
-            img.src = nextImg.src;
-            const latency = Math.round(performance.now() - startT);
-            const latEl = document.getElementById('stream-latency-badge');
-            if (latEl) latEl.innerText = `延迟: ${Math.min(latency, 250)}ms`;
+            if (isStreamActive && streamGeneration === currentGen) {
+              img.src = nextImg.src;
+              const latency = Math.round(performance.now() - startT);
+              const latEl = document.getElementById('stream-latency-badge');
+              if (latEl) latEl.innerText = `延迟: ${Math.min(latency, 250)}ms`;
+            }
+            onDone();
+          };
+          nextImg.onerror = () => {
+            onDone();
           };
           nextImg.src = getStreamUrl();
         };
         fetchSnap();
-        const interval = Math.max(100, Math.round(1000 / streamFps));
-        snapshotTimer = setInterval(fetchSnap, interval);
       }
     }
 

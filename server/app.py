@@ -15,8 +15,10 @@ import sys
 import threading
 import time
 from typing import Any, Dict, List, Optional
+import cv2
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.responses import HTMLResponse, StreamingResponse
+import numpy as np
 from pydantic import BaseModel, Field
 from loguru import logger
 
@@ -456,12 +458,7 @@ def _get_default_offline_frame() -> bytes:
 
 
 def _capture_any_connected_frame() -> Optional[bytes]:
-    """Use the first instance that is already connected.
-
-    The generic screenshot must not call ``adb connect`` on a down tunnel.
-    inst_01 is the live MuMu, and a failed connect there used to 500 the
-    dashboard even though the virtual instances still had frames.
-    """
+    """Capture a frame from the first connected cluster instance for global preview."""
     for inst in CLUSTER_POOL.list_instances():
         dev = getattr(inst, "device", None)
         if dev is None or not dev.is_connected():
@@ -477,7 +474,7 @@ def image_media_type(frame_bytes: bytes) -> str:
     """Sniff the container. ADB screencap is PNG; VirtualDevice frames are JPEG."""
     if frame_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
         return "image/png"
-    if frame_bytes.startswith(b"\xff\xd8\xff"):
+    if frame_bytes.startswith(b"\xff\xd8"):
         return "image/jpeg"
     return "application/octet-stream"
 
@@ -491,20 +488,25 @@ def get_screenshot(instance_id: Optional[str] = None) -> Response:
     try:
         if instance_id:
             inst = CLUSTER_POOL.get_instance(instance_id)
-            if inst:
-                frame_bytes = inst.screencap()
-            else:
+            if not inst:
                 raise HTTPException(status_code=404, detail=f"Instance [{instance_id}] not found.")
+            try:
+                frame_bytes = inst.screencap()
+            except Exception as e:
+                logger.debug(f"Failed to capture frame from instance [{instance_id}]: {e}")
+                frame_bytes = None
+            if not frame_bytes:
+                frame_bytes = _get_default_offline_frame()
+        else:
+            with GLOBAL_TASK._lock:
+                if not frame_bytes and GLOBAL_TASK.device and GLOBAL_TASK.running:
+                    frame_bytes = GLOBAL_TASK.device.screencap()
 
-        with GLOBAL_TASK._lock:
-            if not frame_bytes and GLOBAL_TASK.device and GLOBAL_TASK.running:
-                frame_bytes = GLOBAL_TASK.device.screencap()
+            if not frame_bytes:
+                frame_bytes = _capture_any_connected_frame()
 
-        if not frame_bytes:
-            frame_bytes = _capture_any_connected_frame()
-
-        if not frame_bytes:
-            frame_bytes = _get_default_offline_frame()
+            if not frame_bytes:
+                frame_bytes = _get_default_offline_frame()
 
         return Response(content=frame_bytes, media_type=image_media_type(frame_bytes))
     except HTTPException:
@@ -513,40 +515,70 @@ def get_screenshot(instance_id: Optional[str] = None) -> Response:
         raise HTTPException(status_code=500, detail=f"Failed to capture frame: {e}")
 
 
-def _generate_mjpeg_frames(instance_id: Optional[str] = None, fps: float = 10.0):
+def _generate_mjpeg_frames(instance_id: Optional[str] = None, fps: float = 10.0, max_frames: Optional[int] = None):
     interval = max(0.033, 1.0 / max(1.0, min(fps, 30.0)))
+    yielded = 0
     while True:
+        if max_frames is not None and yielded >= max_frames:
+            break
+
         frame_bytes = None
         try:
             if instance_id:
                 inst = CLUSTER_POOL.get_instance(instance_id)
                 if inst:
-                    frame_bytes = inst.screencap()
-            with GLOBAL_TASK._lock:
-                if not frame_bytes and GLOBAL_TASK.device and GLOBAL_TASK.running:
-                    frame_bytes = GLOBAL_TASK.device.screencap()
-            if not frame_bytes:
-                frame_bytes = _capture_any_connected_frame() or _get_default_offline_frame()
+                    try:
+                        frame_bytes = inst.screencap()
+                    except Exception as e:
+                        logger.debug(f"Frame capture error for [{instance_id}] in stream: {e}")
+                        frame_bytes = None
+                if not frame_bytes:
+                    frame_bytes = _get_default_offline_frame()
+            else:
+                with GLOBAL_TASK._lock:
+                    if not frame_bytes and GLOBAL_TASK.device and GLOBAL_TASK.running:
+                        frame_bytes = GLOBAL_TASK.device.screencap()
+                if not frame_bytes:
+                    frame_bytes = _capture_any_connected_frame() or _get_default_offline_frame()
         except Exception as e:
             logger.debug(f"Frame capture error in stream: {e}")
-            time.sleep(interval)
-            continue
+            frame_bytes = _get_default_offline_frame()
 
         if frame_bytes:
+            if frame_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+                try:
+                    mat = cv2.imdecode(np.frombuffer(frame_bytes, np.uint8), cv2.IMREAD_COLOR)
+                    if mat is not None:
+                        h, w = mat.shape[:2]
+                        if w > 1280 or h > 1280:
+                            scale = 1280.0 / max(w, h)
+                            mat = cv2.resize(mat, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+                        ok, jpg = cv2.imencode(".jpg", mat, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+                        if ok:
+                            frame_bytes = jpg.tobytes()
+                except Exception as e:
+                    logger.debug(f"JPEG transcode error: {e}")
+
             content_type = image_media_type(frame_bytes).encode("ascii")
             yield (
                 b"--frame\r\n"
                 b"Content-Type: " + content_type + b"\r\n\r\n" + frame_bytes + b"\r\n"
             )
+            yielded += 1
         time.sleep(interval)
 
 
 @app.get("/api/v1/stream")
 @app.head("/api/v1/stream")
-def stream_video(instance_id: Optional[str] = None, fps: float = 10.0) -> StreamingResponse:
+def stream_video(instance_id: Optional[str] = None, fps: float = 10.0, max_frames: Optional[int] = None) -> StreamingResponse:
     """Stream live MJPEG video frames from active task or a specific cluster instance."""
+    ensure_cluster_initialized()
+    if instance_id:
+        inst = CLUSTER_POOL.get_instance(instance_id)
+        if not inst:
+            raise HTTPException(status_code=404, detail=f"Instance [{instance_id}] not found.")
     return StreamingResponse(
-        _generate_mjpeg_frames(instance_id=instance_id, fps=fps),
+        _generate_mjpeg_frames(instance_id=instance_id, fps=fps, max_frames=max_frames),
         media_type="multipart/x-mixed-replace; boundary=frame",
     )
 
@@ -600,9 +632,13 @@ def init_default_cluster(config_path: Optional[str] = None) -> None:
     if len(CLUSTER_POOL.get_instances()) == 0 and accounts:
         for i, acc in enumerate(accounts, start=1):
             inst_id = f"inst_{i:02d}"
-            # inst_01 is the live MuMu 12 on home-win. The port is a
-            # localhost reverse tunnel (KeepMuMuAdbTunnel), not a public ADB.
+            # inst_01: live CloudPhone (SM-F900F) via FRP STCP tunnel.
+            # inst_02: live MuMu 12 on home-win via SSH reverse tunnel.
             if i == 1:
+                device_type = "adb"
+                serial = "127.0.0.1:55556"
+                name = "CloudPhone-winner"
+            elif i == 2:
                 device_type = "adb"
                 serial = "127.0.0.1:16384"
                 name = "MuMu12-home-win"
@@ -830,13 +866,13 @@ def get_instance_screenshot(instance_id: str) -> Response:
 
 @app.get("/api/v1/cluster/instances/{instance_id}/stream")
 @app.head("/api/v1/cluster/instances/{instance_id}/stream")
-def stream_instance_video(instance_id: str, fps: float = 10.0) -> StreamingResponse:
+def stream_instance_video(instance_id: str, fps: float = 10.0, max_frames: Optional[int] = None) -> StreamingResponse:
     """Stream live MJPEG video frames from a specific cluster instance."""
     inst = CLUSTER_POOL.get_instance(instance_id)
     if not inst:
         raise HTTPException(status_code=404, detail=f"Instance [{instance_id}] not found.")
     return StreamingResponse(
-        _generate_mjpeg_frames(instance_id=instance_id, fps=fps),
+        _generate_mjpeg_frames(instance_id=instance_id, fps=fps, max_frames=max_frames),
         media_type="multipart/x-mixed-replace; boundary=frame",
     )
 
