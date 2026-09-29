@@ -156,6 +156,26 @@ def _find_text(items: list, kw: str) -> Optional[Any]:
     return _find(items, lambda it: kw in getattr(it, "text", ""))
 
 
+# Quest-tracker lines ("主线-佛道斗法") and world-chat broadcasts
+# ("阵容推荐…时空纺织机…") cross QUIZ_QUESTION_ROI during battle gaps and satisfy the
+# question+options heuristic, so quiz_answer blind-clicks per the bank-miss policy
+# (live 2026-09-29). Real quiz questions never carry these markers.
+_QUEST_LINE_RE = re.compile(
+    r"^(主线|支线|师门|帮派|日常|抓鬼|宝图|运镖|秘境|剧情|修行|封妖|二十八宿)[\-—–·]"
+)
+
+
+def _looks_like_chat_or_quest_line(text: str) -> bool:
+    t = text.strip()
+    if _QUEST_LINE_RE.search(t):
+        return True  # quest tracker line: "主线-佛道斗法"
+    if "…" in t or "..." in t:
+        return True  # merged chat fragments: "阵容推荐…时空纺织机…"
+    if "推荐" in t and "？" not in t and "?" not in t:
+        return True  # world-chat spam: 阵容推荐/阵容搭配 broadcasts
+    return False
+
+
 def _center(item: Any) -> Tuple[float, float]:
     return float(item.center[0]), float(item.center[1])
 
@@ -164,6 +184,51 @@ def _click(ctx: PipelineContext, x: float, y: float) -> None:
     if ctx.device:
         ctx.device.click(x, y)
         time.sleep(0.1)
+
+
+def _locate_corner_x(ctx: PipelineContext, items: list, x_min: int = 1000, y_max: int = 200) -> Optional[Tuple[float, float]]:
+    """Locate the top-right × (close button) of a popup/sub-window.
+
+    Full-frame OCR routinely misses the small × glyph of sub-windows — the 星宿之影
+    smart-guide window's real × sits at frame (1138, 53) but full-frame OCR returned a
+    spurious × at (1144, 113) and missed the real one, so dismiss_popups clicked dead
+    space and the window never closed (live 2026-09-29, panel-open loop). The glyph is
+    only reliably read after a 3x upscale of the top strip (observed real × positions:
+    fashion (1143,35), sect-goal (1131,80), 星宿之影 (1138,53) — all y < 110).
+    Strategy: trust a parsed × only in the tight band (x>x_min, y<110); a parse outside
+    it (or no parse) triggers a re-screencap + 3x-upscaled top-strip OCR, mapping the ×
+    back into frame coordinates. Returns frame-space (x, y) or None (caller falls back
+    to its own fixed coordinate / parsed low ×).
+    """
+    cand = _find(items, lambda it: it.text.strip() in ("×", "X", "x", "✕")
+               and it.center[0] > x_min and it.center[1] < 110)
+    if cand is not None:
+        return _center(cand)
+    # Upscaled re-OCR fallback — needs a live device and OpenCV.
+    dev = getattr(ctx, "device", None)
+    if dev is None or not hasattr(dev, "screencap"):
+        return None
+    try:
+        import cv2  # local import: only needed on the slow path
+        import numpy as np
+        png = dev.screencap()
+        frame = cv2.imdecode(np.frombuffer(png, np.uint8), cv2.IMREAD_COLOR)
+        if frame is None:
+            return None
+        h, w = frame.shape[:2]
+        x0, y0 = max(x_min - 40, 0), 0
+        x1, y1 = min(w, x_min + 280), min(y_max, h)
+        crop = cv2.resize(frame[y0:y1, x0:x1], None, fx=3, fy=3,
+                          interpolation=cv2.INTER_CUBIC)
+        upscaled = _ocr_items(crop)
+        xb = _find(upscaled, lambda it: it.text.strip() in ("×", "X", "x", "✕"))
+        if xb is not None:
+            cx, cy = _center(xb)
+            # map back from 3x upscaled crop space to original frame space
+            return (x0 + cx / 3.0, y0 + cy / 3.0)
+    except Exception as e:
+        logger.warning(f"daily: upscaled corner-× OCR failed: {e}")
+    return None
 
 
 # --- combat perception & decision ---------------------------------------------
@@ -459,6 +524,7 @@ def classify_screen(ctx: PipelineContext, frame: Any, rec: NodeRecognition = Non
         QUIZ_QUESTION_ROI[0] <= it.center[0] <= QUIZ_QUESTION_ROI[2]
         and QUIZ_QUESTION_ROI[1] <= it.center[1] <= QUIZ_QUESTION_ROI[3]
         and len(it.text.strip()) >= 6
+        and not _looks_like_chat_or_quest_line(it.text)
     ))
     quiz_option_count = sum(
         1 for it in items
@@ -506,6 +572,12 @@ def classify_screen(ctx: PipelineContext, frame: Any, rec: NodeRecognition = Non
         1 for kw in ("头饰", "坐骑", "称谓特效", "名片背景", "入场特效", "武器幻彩", "试穿", "保存穿搭")
         if any(kw in t for t in texts)
     ) >= 2
+    # 门派目标 sub-window ("本周门派目标×示威亲善" title + tab rows): opens when the
+    # 师门 tracker leads into the mentor dialog chain. Its merged title line lands in
+    # the question ROI and tab rows in the option ROI, so quiz_answer blind-clicks it
+    # in a loop (live 2026-09-29, recurring every few minutes during 师门 resume).
+    # It is a sub-window, closed via its top-right ×.
+    sect_goal_window = any("本周门派目标" in t or "示威亲善" in t for t in texts)
     # Post-battle guild recruit page ("加入帮派…推荐帮派" + 申请入帮 rows). Its
     # title sits in the question ROI and the apply buttons sit in the option ROI,
     # so the question+options heuristic fires and quiz_answer (higher priority than
@@ -513,7 +585,8 @@ def classify_screen(ctx: PipelineContext, frame: Any, rec: NodeRecognition = Non
     # 宝图 abandoned at 12:11). It is a popup, closed via 本周不再提醒.
     guild_recruit = any("推荐帮派" in t or "申请入帮" in t or "本周不再提醒" in t for t in texts)
     v["fashion_showroom"] = fashion_showroom
-    v["quiz_open"] = (not v["in_battle"]) and (not v["dialog_open"]) and (not v["panel_open"]) and (not v["deposit_open"]) and (main_ui_marker is None) and (not guide_popup) and (not v["escort_traveling"]) and (not chief_vote_popup) and (not jianhui_popup) and (not stall_open) and (not guild_recruit) and (not fashion_showroom) and (not v["turnin_open"]) and bool(
+    v["sect_goal_window"] = sect_goal_window
+    v["quiz_open"] = (not v["in_battle"]) and (not v["dialog_open"]) and (not v["panel_open"]) and (not v["deposit_open"]) and (main_ui_marker is None) and (not guide_popup) and (not v["escort_traveling"]) and (not chief_vote_popup) and (not jianhui_popup) and (not stall_open) and (not guild_recruit) and (not fashion_showroom) and (not sect_goal_window) and (not v["turnin_open"]) and bool(
         quiz_header or quiz_done_hit or (quiz_question_item is not None and quiz_option_count >= 2)
     )
 
@@ -602,7 +675,7 @@ def classify_screen(ctx: PipelineContext, frame: Any, rec: NodeRecognition = Non
         or v["shop_open"] or v["turnin_open"] or v["deposit_open"]
         or v["dialog_open"] or v["use_item_open"] or v["quiz_open"]
     )
-    v["popup_open"] = bool(v["xianyu_cost_popup"]) or bool(v["quit_game_confirm"]) or bool(v["guide_popup"]) or bool(v.get("gacha_page")) or bool(v["fullscreen_popup"]) or bool(paywall) or bool(guild_recruit) or bool(jianhui_popup) or bool(has_blocking_promo) or bool(has_subwindow) or bool(v.get("fashion_showroom")) or ((not is_functional_window) and (
+    v["popup_open"] = bool(v["xianyu_cost_popup"]) or bool(v["quit_game_confirm"]) or bool(v["guide_popup"]) or bool(v.get("gacha_page")) or bool(v["fullscreen_popup"]) or bool(paywall) or bool(guild_recruit) or bool(jianhui_popup) or bool(has_blocking_promo) or bool(has_subwindow) or bool(v.get("fashion_showroom")) or bool(v.get("sect_goal_window")) or ((not is_functional_window) and (
         any(c[0] > 1050 and c[1] < 120 and t.strip() in ("×", "X", "x", "✕") for t, c in zip(texts, centers))
         or any(any(kw in t.strip() for kw in ("确认关闭", "点击空白处", "点击屏幕", "轻触屏幕", "满月如璧", "我知道了")) for t in texts)
         or any(t.strip() in ("×", "X", "x", "✕") and 600 < c[0] < 1250 and c[1] < 250 for t, c in zip(texts, centers) if not v["shop_open"])
@@ -801,7 +874,15 @@ def handle_activity_panel(ctx: PipelineContext, act: NodeAction) -> None:
     v = ctx.variables
     daily_queue = v.get("daily_queue") or ["师门任务", "宝图任务", "秘境降妖", "科举乡试", "三界奇缘", "运镖"]
     completed_tasks = ctx.variables.setdefault("completed_tasks", [])
-    
+    # Time-gated activities (live 2026-09-29 panel: 三界奇缘 "今日 11:00开启",
+    # 科举乡试 "今日 17:00开启", no 参加 button) are neither done nor unfinished.
+    # Treating them as "read but not finished" left them in still_open, and the
+    # still_open guard closed the panel before the chest branch ever ran — the
+    # 20-活跃 chest was never claimed at 活跃度 37. Tracked separately from
+    # completed_tasks so a run still alive when the gate passes (11:00/17:00)
+    # can dispatch them afterwards.
+    not_runnable_today = ctx.variables.setdefault("not_runnable_today", [])
+
     # The score bubble is OCR-blind and PARTIAL READS happen (live: bubble "61" read
     # as "6", wrongly locking escort) — the pixel measurement is the primary source;
     # OCR-based extraction is only the fallback when no frame/bar is available.
@@ -872,7 +953,16 @@ def handle_activity_panel(ctx: PipelineContext, act: NodeAction) -> None:
     # A card already seen this visit counts even when it has scrolled off: the scan
     # only needs to find each queued task once, then dispatch whatever button is on
     # screen. Otherwise the list scrolls for the whole budget and never clicks.
-    missing_queued = [t for t in daily_queue if t not in completed_tasks and t not in cards_by_name]
+    # A time-gated card whose gate has passed this run (its 参加 button is now
+    # parsed and the card no longer reads *开启*) is runnable again — drop it
+    # from the not-runnable list so dispatch can pick it up.
+    for t in list(not_runnable_today):
+        c = cards_by_name.get(t)
+        if c and c["join_btn"] and not c["is_done"] and not c["is_time_gated"]:
+            not_runnable_today.remove(t)
+            logger.info(f"[daily_panel] [{t}] time gate passed; dispatchable again")
+
+    missing_queued = [t for t in daily_queue if t not in completed_tasks and t not in not_runnable_today and t not in cards_by_name]
     scroll_count = ctx.variables.setdefault("panel_scroll_count", 0)
     # Scrolling lands the panel somewhere mid-list (it remembers its position and a
     # swipe can switch tabs), so a card seen on tick 1 is gone on tick 3. After the
@@ -985,6 +1075,8 @@ def handle_activity_panel(ctx: PipelineContext, act: NodeAction) -> None:
             card = cards_by_name.get(task_name)
             if card is None or card["is_done"]:
                 continue
+            if task_name in not_runnable_today:
+                continue  # still time-gated (e.g. 17:00开启): no fixed row to click
             if task_name == "运镖" and current_huoyue < 50:
                 continue
             if v.get("daily_rows_aligned"):
@@ -1063,6 +1155,17 @@ def handle_activity_panel(ctx: PipelineContext, act: NodeAction) -> None:
                     "— leaving it unfinished for the next pass."
                 )
                 continue
+            elif card["is_time_gated"] and not card["is_done"]:
+                # Time-gated (三界奇缘 11:00开启 / 科举乡试 17:00开启): genuinely not
+                # runnable now, NOT unfinished. Ineligible for today's run unless the
+                # gate passes while the run is still alive; chests are unaffected.
+                if task_name not in not_runnable_today:
+                    logger.warning(
+                        f"[daily_panel] [{task_name}] time-gated ({card['card_text'][:24]}); "
+                        "not runnable now — tracked as ineligible, chests unaffected."
+                    )
+                    not_runnable_today.append(task_name)
+                continue
             elif not card["is_done"]:
                 # Read but not finished (its 参加 button is just off-screen this tick).
                 # Keep it queued so the next panel visit scrolls to it and dispatches.
@@ -1077,8 +1180,10 @@ def handle_activity_panel(ctx: PipelineContext, act: NodeAction) -> None:
     # A task left unfinished above (never parsed, or read but its 参加 is off-screen)
     # must keep the day open. Otherwise the pipeline takes daily_finish and never comes
     # back for it (live 2026-09-27: 科举乡试 never parsed and 三界奇缘 at 0/10, yet
-    # all_dailies_done was set and the run exited).
-    still_open = [t for t in daily_queue if t not in completed_tasks]
+    # all_dailies_done was set and the run exited). Time-gated tasks are excluded:
+    # they cannot run now, and blocking on them cost the whole chest claim
+    # (live 2026-09-29: chests never claimed because 三界奇缘 was 11:00开启).
+    still_open = [t for t in daily_queue if t not in completed_tasks and t not in not_runnable_today]
     if still_open:
         logger.warning(
             f"[daily_panel] Not finished — {still_open} still queued. Closing the panel "
@@ -1160,7 +1265,10 @@ def _shop_dialog_signature(items: list, buy_btn: Optional[Any]) -> str:
         if 400 < it.center[0] < 1260 and 120 < it.center[1] < 660
         and len(getattr(it, "text", "").strip()) >= 2
     })
-    btn = f"{buy_btn.center[0]:.0f},{buy_btn.center[1]:.0f}" if buy_btn is not None else "-"
+    # Round the button position to 10px buckets: OCR bounding boxes jitter by a
+    # couple of pixels between frames, which must not reset the per-window budget.
+    # The item-row text below is the stronger identity signal anyway.
+    btn = "-" if buy_btn is None else f"{round(buy_btn.center[0] / 10) * 10:.0f},{round(buy_btn.center[1] / 10) * 10:.0f}"
     return btn + "|" + "|".join(rows)[:240]
 
 
@@ -1230,12 +1338,14 @@ def click_shop_buy(ctx: PipelineContext, act: NodeAction) -> None:
         if sells_maps:
             ctx.variables["treasure_map_buys_this_dig"] = ctx.variables.get("treasure_map_buys_this_dig", 0) + 1
     else:
+        # No 购买 button visible on the current frame: the shop dialog is not open
+        # (or OCR missed it). Never blind-click a fixed coordinate — a stray tap in
+        # the game world could buy an unintended item (review P2).
         if buys_done >= max_buys:
             logger.info("[shop_buy] 本次窗口已购买，停止重复购买（背包保护）")
             return
-        logger.info("[shop_buy] Fallback clicking 购买 at (1010, 656)")
-        _click(ctx, 1010, 656)
-        ctx.variables["shop_buys_this_dialog"] = buys_done + 1
+        logger.info("[shop_buy] 未检测到「购买」按钮，跳过本次点击（不盲点坐标）")
+        return
     time.sleep(1.5)
 
     # Check if in player stall (摆摊): buying does not auto-close stall, so close it to resume quest
@@ -1284,11 +1394,15 @@ def buy_treasure_map(ctx: PipelineContext, act: NodeAction) -> None:
         logger.info(f"[baotu] 挖宝购图已达上限（本轮 {buys}/{limit}, 剩余挖掘 {remaining}），不再购买")
         return
 
-    items = ctx.variables.get("_last_frame_items") or []
-    if not items and ctx.device is not None and hasattr(ctx.device, "screencap"):
-        # The standalone baotu pipeline never runs classify_screen, so the shared
-        # frame-item cache is empty here. Live-OCR the current frame instead so we
-        # never blind-click a coordinate.
+    # The dig-time purchase must act on the *current* screen, not on the shared
+    # _last_frame_items cache: in a chained routine (shimen -> baotu) that cache
+    # still holds the previous pipeline's classify_screen output, and a 购买 button
+    # found there would be a stale click on the wrong screen (review P1). Always
+    # live-OCR the fresh frame; the injected cache is only a stand-in for devices
+    # that cannot produce a frame at all (unit-test DummyDevice returns b'').
+    items = []
+    fresh_frame = False
+    if ctx.device is not None and hasattr(ctx.device, "screencap"):
         try:
             raw = ctx.device.screencap()
             if raw:
@@ -1296,9 +1410,13 @@ def buy_treasure_map(ctx: PipelineContext, act: NodeAction) -> None:
                 import numpy as np
                 frame = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR)
                 if frame is not None:
+                    fresh_frame = True
                     items = _ocr_items(frame)
         except Exception as exc:
             logger.warning(f"[baotu] 购图前实机取帧失败：{exc}")
+    if not fresh_frame:
+        # Test/virtual devices produce no readable frame; serve the injected cache.
+        items = ctx.variables.get("_last_frame_items") or []
 
     buy_btn = _find(items, lambda it: it.text == "购买" and it.center[0] > 800 and it.center[1] > 450)
     if buy_btn is None:
@@ -1429,13 +1547,23 @@ def click_dialog_choice(ctx: PipelineContext, act: NodeAction) -> None:
         # Also exclude quest tracker items (which contain progress counters like "（4/10）" or "(4/10)"),
         # and pick the lowest matching option in the choice column so real dialogue options (y >= 260)
         # always win over top-right HUD tracker text (y ~ 196).
+        # "首席" options (挑战首席弟子) are the guild chief-duel weekly, never a daily
+        # step: the base keyword 挑战 matched it in the mentor dialog while a 师门
+        # errand was mid-progress, and each duel is a ~15-min unwinnable stalemate
+        # (帮众 adds respawn, auto-flee, no 师门 progress) — 59 clicks, 师门 stuck at
+        # 2/10 for the whole run (live 2026-09-29).
         matches = [
             it for it in items
             if kw in it.text
+            and "首席" not in it.text
             and "（" not in it.text and "(" not in it.text and "/" not in it.text
             and 1000 < it.center[0] < 1250
             and len(it.text.strip()) <= 16
-            and (170 if curr_task == "师门任务" else choice_y_min) < it.center[1] < choice_y_max
+            # Live 2026-09-29 (in-progress errand 三界安宁 2/10): the mentor dialog
+            # lists 师门任务 as the FIRST option at frame y≈130 — above the old 170
+            # floor, so the keyword loop never matched it and the generic fallback
+            # clicked 门派关系 (opening the 门派目标 window) instead of resuming.
+            and (120 if curr_task == "师门任务" else choice_y_min) < it.center[1] < choice_y_max
         ]
         matched = max(matches, key=lambda it: it.center[1]) if matches else None
         if matched is not None:
@@ -1461,7 +1589,9 @@ def click_dialog_choice(ctx: PipelineContext, act: NodeAction) -> None:
             return False
         # 首席弟子竞选 is a weekly vote event, not a daily: "查看竞选名单" reopens the
         # vote popup and loops (live 2026-09-26, 月宫 师门 dialog).
-        if "竞选" in text:
+        # 挑战首席弟子 is the guild chief-duel weekly: an unwinnable ~15-min solo
+        # stalemate that abandons the daily (live 2026-09-29).
+        if "竞选" in text or "首席" in text:
             return False
         # "浏览三界论坛" opens the in-game forum web page and abandons the quest
         # (live 2026-09-26, 宝图 NPC dialog).
@@ -1481,6 +1611,17 @@ def click_dialog_choice(ctx: PipelineContext, act: NodeAction) -> None:
         time.sleep(1.5)
         return
         
+    # Blind-clicking the default choice slot is dangerous when the only options left
+    # are the guild chief-duel weekly (挑战首席弟子/查看竞选名单): (1086,468) sits close
+    # enough to start the ~15-min unwinnable duel (live 2026-09-29). Close instead.
+    if any("首席" in getattr(it, "text", "") or "竞选" in getattr(it, "text", "")
+           for it in items if 1000 < it.center[0] < 1250 and 250 < it.center[1] < 680):
+        logger.info("[dialog] Only guild chief-duel options visible; closing dialog instead of blind click")
+        if ctx.device is not None and hasattr(ctx.device, "press_key"):
+            ctx.device.press_key(4)
+        time.sleep(1.2)
+        return
+
     logger.info("[dialog] Fallback clicking default dialogue choice at (1086, 468)")
     _click(ctx, 1086, 468)
     time.sleep(1.5)
@@ -1550,18 +1691,29 @@ def open_activity_panel(ctx: PipelineContext, act: NodeAction) -> None:
     # the 排行榜 sidebar ("帮派榜" read as "…活动", live 2026-09-26), which then gets
     # tapped and reopens the ranking page instead of the activity panel.
     act_btn = _find(items, lambda it: "活动" in it.text and 40 < it.center[1] < 95 and 250 < it.center[0] < 560)
-    if act_btn is not None:
-        # The three top-bar buttons OCR as one blob ("活动排行挂机"), whose center
-        # lands on 排行 and opens the ranking page (live 2026-09-26, tap at x≈426).
-        # 活动 is the leftmost button, so aim at the blob's left end, not its center.
+    # The top bar buttons OCR either as separate items (指引/活动/排行/挂机) or as one
+    # merged blob. "Blob left end + 30px" only lands on 活动 when the blob STARTS at
+    # 活动 ("活动排行挂机"). A blob prefixed by 指引 ("指引活动排行挂机", live 2026-09-29)
+    # has its left end on 指引 — tapping left+30px opens the guide window instead of
+    # the panel, which is exactly what kept re-triggering the 门派目标/星宿之影 windows.
+    # So: prefer a clean standalone 活动 item; for a 指引-prefixed blob fall back to the
+    # HUD-fixed position (the top bar layout is identical on every map) instead of
+    # unreliable blob geometry.
+    standalone = _find(items, lambda it: it.text.strip() == "活动" and 40 < it.center[1] < 95 and 250 < it.center[0] < 560)
+    if standalone is not None:
+        ax, ay = _center(standalone)
+        src = "standalone item"
+    elif act_btn is not None and not act_btn.text.strip().startswith("指引"):
         bx, by, bw, bh = act_btn.bbox
+        # 活动 is the leftmost button of the blob, so aim at its left end, not its center.
         ax = bx + min(30, bw / 2)
         ay = by + bh / 2
-        _click(ctx, ax, ay)
-        logger.info(f"daily: tap top-bar 活动 button at ({ax:.0f}, {ay:.0f})")
+        src = f"blob '{act_btn.text.strip()[:10]}' left end"
     else:
-        _click(ctx, *TOPBAR_ACTIVITY)
-        logger.info(f"daily: tap fallback top-bar 活动 at {TOPBAR_ACTIVITY}")
+        ax, ay = TOPBAR_ACTIVITY
+        src = "HUD-fixed" if act_btn is not None else "fallback"
+    _click(ctx, ax, ay)
+    logger.info(f"daily: tap top-bar 活动 button at ({ax:.0f}, {ay:.0f}) [{src}]")
     time.sleep(2.5)
 
 
@@ -1735,6 +1887,18 @@ def dismiss_popups(ctx: PipelineContext, act: NodeAction) -> None:
         time.sleep(1.2)
         return
 
+    # 门派目标 sub-window ("本周门派目标×示威亲善"): same quiz-misfire class as the
+    # fashion showroom — its merged title lands in the question ROI and tabs in the
+    # option ROI (live 2026-09-29, recurring during 师门 resume). Back does not close it;
+    # its corner × (~1131, 80) does. The X is small so OCR may miss it; fall back fixed.
+    if any(kw in getattr(it, "text", "") for it in items for kw in ("本周门派目标", "示威亲善")):
+        xbtn = _find(items, lambda it: it.text.strip() in ("×", "X", "x", "✕") and it.center[0] > 1000 and it.center[1] < 140)
+        x, y = _center(xbtn) if xbtn is not None else (1131.0, 80.0)
+        logger.info(f"[dismiss_popups] Sect-goal window detected; closing via X at ({x:.0f}, {y:.0f})")
+        _click(ctx, x, y)
+        time.sleep(1.2)
+        return
+
     # Cash-shop pages (月卡/首充/累充/星途祈愿): the back key does NOT close them, but
     # they have a corner X (OCR reads it as X/× near the top-right). Tap that, and
     # never the 购买 buttons (live 2026-09-27: back left the 星途祈愿 page open; the X
@@ -1787,7 +1951,16 @@ def dismiss_popups(ctx: PipelineContext, act: NodeAction) -> None:
     # Check modal promo close button (e.g. 银钥匙半价啦 at 807, 141)
     promo_xbtn = _find(items, lambda it: it.text in ("×", "X", "x", "✕") and 500 < it.center[0] < 1250 and it.center[1] < 300)
     if promo_xbtn:
-        x, y = _center(promo_xbtn)
+        # A parsed × below the genuine close-button band (y>=110) is suspect: full-frame
+        # OCR returned a spurious × at (1144,113) while the real close × sat at (1138,53)
+        # — clicking dead space looped the window open (live 2026-09-29, 星宿之影 window
+        # blocked the activity panel for ~20 min). Re-locate via 3x upscaled top strip;
+        # keep the parsed spot if that fails (covers mid-window × like 807,141).
+        xy = _locate_corner_x(ctx, items) if promo_xbtn.center[1] >= 110 else None
+        if xy is not None:
+            x, y = xy
+        else:
+            x, y = _center(promo_xbtn)
         _click(ctx, x, y)
         logger.info(f"daily: dismiss modal promo × at ({x:.0f}, {y:.0f})")
         time.sleep(1.2)

@@ -36,6 +36,12 @@ class NodeRecognition(BaseModel):
     threshold: float = 0.8
     custom_func: Optional[str] = None
     condition: Optional[str] = None  # Optional expression evaluating against ctx.variables
+    skip_on_stale: bool = False  # custom recognizers that OCR the frame must not run on the
+    # pre-action frame of the tick that just clicked/swiped (e.g. bag probes right
+    # after the inventory-open tap). See dag.tick() stale-frame guard.
+    skip_on_stale: bool = False  # custom recognizers that OCR the frame must not run on the
+    # pre-action frame of the tick that just clicked/swiped (e.g. bag probes right
+    # after the inventory-open tap). See dag.tick() stale-frame guard.
 
 
 class NodeAction(BaseModel):
@@ -310,7 +316,10 @@ class DAGPipeline:
                 if not next_node:
                     continue
                 # If an interactive action just executed, skip visual evaluation on stale frame
-                if action_is_interactive and next_node.recognition.type in ("template", "ocr", "battle"):
+                if action_is_interactive and (
+                    next_node.recognition.type in ("template", "ocr", "battle")
+                    or (next_node.recognition.type == "custom" and next_node.recognition.skip_on_stale)
+                ):
                     continue
                 if self._eval_recognition(next_node, ctx, frame):
                     self.current_node_name = next_name

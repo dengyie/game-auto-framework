@@ -86,7 +86,8 @@
       "name": "probe_map_in_bag",
       "recognition": {
         "type": "custom",
-        "custom_func": "probe_map_in_bag"
+        "custom_func": "probe_map_in_bag",
+        "skip_on_stale": true
       },
       "action": {
         "type": "none"

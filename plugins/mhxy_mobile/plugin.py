@@ -5,6 +5,7 @@ Implements domain-specific recognition, action handlers, quiz solver, and anti-b
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Any, Optional
 from loguru import logger
@@ -252,21 +253,20 @@ class MHXYMobilePlugin(BaseGamePlugin):
             # No map row read in the bag: the dig phase must buy one at dig time.
             ctx.variables["has_treasure_map"] = False
             return False
-        return ctx.variables.get("has_treasure_map", True)
+        verdict = ctx.variables.get("has_treasure_map", True)
+        ctx.variables["has_treasure_map"] = verdict
+        return verdict
 
     def _probe_map_in_bag(self, ctx: PipelineContext, frame: Any, rec: NodeRecognition) -> bool:
         """Gate recognizer for the dig loop: refresh the bag-map state, then branch.
 
         The DAG can only branch on variables (not on a recognizer result), and a
         False recognition would stall the node. So this probe runs the same bag
-        read as ``_has_treasure_map_in_bag``, stores its verdict in
-        ``has_treasure_map``, but always returns True to let the branches run:
-        map present -> dig it; absent -> buy exactly one at dig time. The verdict
-        is always written back so the branch's default never matters (an unset
-        variable must not silently fall into the buy path).
+        read as ``_has_treasure_map_in_bag`` (which stores its verdict in
+        ``has_treasure_map``), but always returns True to let the branches run:
+        map present -> dig it; absent -> buy exactly one at dig time.
         """
         self._has_treasure_map_in_bag(ctx, frame, rec)
-        ctx.variables["has_treasure_map"] = ctx.variables.get("has_treasure_map", True)
         return True
 
     def _is_dig_completed(self, ctx: PipelineContext, frame: Any, rec: NodeRecognition) -> bool:
@@ -355,6 +355,24 @@ class MHXYMobilePlugin(BaseGamePlugin):
         ctx.variables["anti_bot_popup_active"] = False
         ctx.variables["anti_bot_prompt_text"] = ""
         logger.info("Anti-bot verification handled and dismissed.")
+
+    def on_pipeline_started(self, pipeline_name: str, account_id: Optional[str] = None) -> None:
+        """Reset cross-pipeline runtime state on every (re)start.
+
+        The shared PluginContext persists across pipelines inside a routine, so
+        ``_last_frame_items`` / ``_last_frame`` populated by a previous pipeline's
+        sense node (classify_screen) would leak into the next pipeline. Handlers
+        like buy_treasure_map must never act on a stale cached frame of a
+        different screen, and a retried dig loop must not inherit exhausted
+        purchase budgets from the failed run (routine.py keeps ctx.variables
+        across retries on purpose).
+        """
+        self.context.variables.pop("_last_frame_items", None)
+        self.context.variables.pop("_last_frame", None)
+        if pipeline_name == "daily_baotu":
+            v = self.context.variables
+            v["treasure_map_buy_attempts"] = 0
+            v["treasure_map_buys_this_dig"] = 0
 
     def on_pipeline_completed(self, pipeline_name: str, account_id: Optional[str] = None) -> None:
         """Record MHXY-specific pipeline completion rewards."""

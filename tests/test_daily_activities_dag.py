@@ -1630,3 +1630,295 @@ def test_fashion_showroom_vetoed_from_quiz_closed_via_corner_x():
     ctx.variables["_last_frame_items"] = showroom
     dismiss_popups(ctx, NodeAction(type="custom", custom_func="dismiss_popups"))
     assert device.clicks == [(1143.0, 35.0)]
+
+
+def test_shimen_dialog_never_clicks_guild_chief_duel():
+    """回归 2026-09-29：师门任务进行中打开门派师父对话框时，基础关键词「挑战」
+    会命中「挑战首席弟子」（帮派首席周挑战，非师门任务步骤）。点进去是一场
+    约15分钟的单人无解拉锯战（帮众怪无限增援、自动逃跑、师门进度不动），
+    当天 59 次点击全部浪费，师门卡死 2/10 直到跑满 tick 上限。
+    dialog_choice 必须排除含「首席」的选项（任务关键词匹配与通用兜底两条路径都要排）。"""
+    device = DummyDevice()
+    ctx = PipelineContext(device=device)
+    ctx.variables["current_task_name"] = "师门任务"
+    # 师门 errand 已在进行（无「师门任务」可领），师父对话框只剩首席挑战等选项
+    ctx.variables["_last_frame_items"] = [
+        DummyOCRItem("请选择要做的事", (1021.0, 253.0)),
+        DummyOCRItem("挑战首席弟子", (1085.0, 329.0)),
+        DummyOCRItem("门派关系", (1085.0, 395.0)),
+    ]
+    click_dialog_choice(ctx, NodeAction(type="custom", custom_func="click_dialog_choice"))
+    # 决不能点进首席决斗；点无害的「门派关系」（通用兜底路径）而非 (1085, 329)
+    assert (1085.0, 329.0) not in device.clicks
+
+    # 通用兜底路径同样要排除「首席」：只剩首席选项时宁可什么都不点
+    device2 = DummyDevice()
+    ctx2 = PipelineContext(device=device2)
+    ctx2.variables["current_task_name"] = "师门任务"
+    ctx2.variables["_last_frame_items"] = [
+        DummyOCRItem("请选择要做的事", (1021.0, 253.0)),
+        DummyOCRItem("查看竞选名单", (1085.0, 329.0)),
+        DummyOCRItem("挑战首席弟子", (1085.0, 395.0)),
+    ]
+    click_dialog_choice(ctx2, NodeAction(type="custom", custom_func="click_dialog_choice"))
+    assert device2.clicks == []
+
+
+def test_sect_goal_window_vetoed_from_quiz_closed_via_corner_x():
+    """回归 2026-09-29：师门任务恢复途中会打开「门派目标」子窗口（合并标题行
+    「本周门派目标×示威亲善」落在题目 ROI，页签行落在选项 ROI），题目+选项启发式
+    误判为科举答题页，quiz_answer 盲点窗口死循环（每几分钟复发一次）。
+    必须从 quiz_open 否决，并经弹窗关闭器用右上角 × (1131,80) 关窗。"""
+    device = DummyDevice()
+    ctx = PipelineContext(device=device)
+    goal_window = [
+        DummyOCRItem("本周门派目标×示威亲善", (640.0, 85.0)),
+        DummyOCRItem("示威", (574.0, 127.0)),
+        DummyOCRItem("亲善", (723.0, 127.0)),
+        DummyOCRItem("×", (1131.0, 80.0)),
+        DummyOCRItem("门派关系", (142.0, 349.0)),
+        DummyOCRItem("小•门派", (1132.0, 311.0)),
+    ]
+    with patch("plugins.mhxy_mobile.custom.daily_handlers._ocr_items", return_value=goal_window):
+        classify_screen(ctx, None)
+    assert ctx.variables["quiz_open"] is False
+    assert ctx.variables["popup_open"] is True
+
+    ctx.variables["_last_frame_items"] = goal_window
+    dismiss_popups(ctx, NodeAction(type="custom", custom_func="dismiss_popups"))
+    assert device.clicks == [(1131.0, 80.0)]
+
+
+def test_time_gated_activity_unblocks_chest_claim():
+    """回归 2026-09-29：三界奇缘「今日 11:00开启」卡被当作「读到了但未完成」留在
+    still_open，关闭面板的保护分支抢在领宝箱之前 return，37 活跃度的 20-活跃宝箱
+    一次都没领过。时间门控活动必须记为 not_runnable_today，宝箱照常领取。"""
+    device = DummyDevice()
+    ctx = PipelineContext(device=device)
+    ctx.variables["daily_queue"] = ["秘境降妖", "三界奇缘"]
+    ctx.variables["completed_tasks"] = []
+    ctx.variables["panel_scroll_count"] = 6  # scan budget spent -> judge from what is read
+
+    items = [
+        DummyOCRItem("秘境降妖", (450.0, 122.0)),
+        DummyOCRItem("次数5/5", (461.0, 148.0)),
+        DummyOCRItem("活跃11/25", (461.0, 174.0)),
+        DummyOCRItem("完成", (669.0, 148.0)),
+        DummyOCRItem("三界奇缘", (450.0, 263.0)),
+        DummyOCRItem("今日 11:00开启", (461.0, 292.0)),
+        DummyOCRItem("37", (534.5, 632.0)),  # 活跃度 progress bubble
+    ]
+    ctx.variables["_last_frame_items"] = items
+
+    handle_activity_panel(ctx, NodeAction(type="custom", custom_func="handle_activity_panel"))
+
+    v = ctx.variables
+    assert "三界奇缘" in v["not_runnable_today"]
+    assert v.get("all_dailies_done") is True  # still_open guard did NOT preempt the chest branch
+    assert 20 in v["claimed_chests"]  # 37 活跃度解锁了 20 宝箱
+    # chests: 20-活跃宝箱 + PANEL_CLOSE；40/60/… 未解锁不点
+    assert device.clicks == [(457, 570), (1142, 48)]
+
+
+def test_time_gated_activity_dispatched_after_gate_passes():
+    """门控过期后（卡片出现 参加 且不再读 *开启*）必须退出 not_runnable_today 并正常
+    派发，而不是被上一轮的不可执行标记永久压住。"""
+    device = DummyDevice()
+    ctx = PipelineContext(device=device)
+    ctx.variables["daily_queue"] = ["三界奇缘"]
+    ctx.variables["completed_tasks"] = []
+    ctx.variables["not_runnable_today"] = ["三界奇缘"]  # marked time-gated earlier this run
+
+    items = [
+        DummyOCRItem("三界奇缘", (450.0, 263.0)),
+        DummyOCRItem("次数0/10", (461.0, 292.0)),
+        DummyOCRItem("参加", (669.0, 286.0)),
+    ]
+    ctx.variables["_last_frame_items"] = items
+
+    handle_activity_panel(ctx, NodeAction(type="custom", custom_func="handle_activity_panel"))
+
+    assert ctx.variables["not_runnable_today"] == []
+    assert device.clicks == [(669.0, 286.0)]
+    assert ctx.variables.get("all_dailies_done") is not True
+
+
+def test_quest_log_line_in_question_roi_not_quiz():
+    """回归 2026-09-29：战斗间隙任务追踪栏「主线-佛道斗法」穿过题干 ROI，叠加两段
+    短文本被当选项，问答启发式误判 quiz_answer 盲点第一项。任务追踪行带类别前缀，
+    必须从 quiz_open 否决。"""
+    ctx = PipelineContext(device=DummyDevice())
+    items = [
+        DummyOCRItem("主线-佛道斗法", (700.0, 95.0)),
+        DummyOCRItem("前往", (500.0, 300.0)),
+        DummyOCRItem("自动", (800.0, 300.0)),
+    ]
+    with patch("plugins.mhxy_mobile.custom.daily_handlers._ocr_items", return_value=items):
+        classify_screen(ctx, None)
+    assert ctx.variables["quiz_open"] is False
+
+
+def test_world_chat_line_in_question_roi_not_quiz():
+    """回归 2026-09-29：世界聊天合并行「阵容推荐…时空纺织机…」漏进题干 ROI 触发
+    quiz 误判。带省略号/推荐词的聊天合并行必须否决。"""
+    ctx = PipelineContext(device=DummyDevice())
+    items = [
+        DummyOCRItem("阵容推荐…时空纺织机…", (700.0, 95.0)),
+        DummyOCRItem("玩家甲", (500.0, 300.0)),
+        DummyOCRItem("玩家乙", (800.0, 300.0)),
+    ]
+    with patch("plugins.mhxy_mobile.custom.daily_handlers._ocr_items", return_value=items):
+        classify_screen(ctx, None)
+    assert ctx.variables["quiz_open"] is False
+
+
+def test_real_quiz_question_still_detected_without_header():
+    """否决精度护栏：无题头、纯题干+两选项的真问题（无聊天/任务行特征）仍判 quiz_open。"""
+    ctx = PipelineContext(device=DummyDevice())
+    items = [
+        DummyOCRItem("下列哪种宝石可以增加法术防御?", (700.0, 95.0)),
+        DummyOCRItem("黑宝石", (500.0, 300.0)),
+        DummyOCRItem("翡翠石", (800.0, 300.0)),
+    ]
+    with patch("plugins.mhxy_mobile.custom.daily_handlers._ocr_items", return_value=items):
+        classify_screen(ctx, None)
+    assert ctx.variables["quiz_open"] is True
+
+
+def test_shimen_errand_dialog_clicks_first_shimen_option():
+    """回归 2026-09-29（实机 OCR，师门 errand 进行中 三界安宁 2/10）：师父对话框
+    首个选项就是「师门任务」，但落在 frame y≈130——旧 170 下限之上，关键词循环
+    不命中，通用兜底点了「门派关系」（打开门派目标窗口）。必须点击「师门任务」。"""
+    device = DummyDevice()
+    ctx = PipelineContext(device=device)
+    ctx.variables["current_task_name"] = "师门任务"
+    ctx.variables["_last_frame_items"] = [
+        DummyOCRItem("请选择要做的事：", (1024.0, 63.0)),
+        DummyOCRItem("师门任务", (1084.8, 130.4)),
+        DummyOCRItem("查看对方外观", (1085.6, 196.8)),
+        DummyOCRItem("一级门派称谓", (1086.4, 263.2)),
+        DummyOCRItem("挑战首席弟子", (1084.8, 329.6)),
+        DummyOCRItem("竞选首席弟子", (1084.8, 396.0)),
+        DummyOCRItem("门派关系", (1085.6, 462.4)),
+        # 首席竞选说明旁白（frame y≈590+，在对话框外）
+        DummyOCRItem("首席弟子每周由门派内所有成员共同选出", (792.0, 589.6)),
+        DummyOCRItem("现在正是首席弟子选拔时间，抓紧机会报名吧", (788.8, 644.8)),
+    ]
+    click_dialog_choice(ctx, NodeAction(type="custom", custom_func="click_dialog_choice"))
+    assert device.clicks == [(1084.8, 130.4)]
+
+
+def test_spurious_x_relocated_via_upscaled_top_crop():
+    """回归 2026-09-29：星宿之影窗全帧 OCR 把真 ×(1138,53) 漏读成假 ×(1144,113)，
+    dismiss_popups 点死区，窗口 20 分钟关不掉。y>=110 的 × 不可信——必须做 3x 放大
+    顶部条带裁剪重 OCR，映射回 (1138,53)。"""
+    import numpy as np
+    import cv2
+    device = DummyDevice()
+    img = np.full((720, 1280, 3), 255, dtype=np.uint8)
+    ok, buf = cv2.imencode(".png", img)
+    assert ok
+    device.screencap = lambda raw=False: buf.tobytes()
+    ctx = PipelineContext(device=device)
+    frame_items = [
+        DummyOCRItem("二十八星宿之影", (640.0, 120.0)),
+        DummyOCRItem("挑战可获得丰厚奖励", (640.0, 200.0)),
+        DummyOCRItem("×", (1144.0, 113.0)),  # spurious; real × sits at (1138, 53)
+    ]
+
+    def fake_ocr(arg):
+        if isinstance(arg, np.ndarray):
+            # crop origin (960, 0), 3x upscale: (960+534/3, 0+159/3) = (1138, 53)
+            return [DummyOCRItem("×", (534.0, 159.0))]
+        return frame_items
+
+    ctx.variables["_last_frame_items"] = frame_items
+    with patch("plugins.mhxy_mobile.custom.daily_handlers._ocr_items", side_effect=fake_ocr):
+        dismiss_popups(ctx, NodeAction(type="custom", custom_func="dismiss_popups"))
+    assert device.clicks == [(1138.0, 53.0)]
+
+
+def test_x_relocation_failure_falls_back_to_parsed_spot():
+    """放大裁剪重 OCR 失败（无 screencap 数据）时必须优雅回退到解析出的 × 原位，
+    而不是抛异常或漏点。"""
+    device = DummyDevice()  # screencap returns b"" -> imdecode fails -> None
+    ctx = PipelineContext(device=device)
+    ctx.variables["_last_frame_items"] = [
+        DummyOCRItem("×", (1144.0, 113.0)),
+    ]
+    with patch("plugins.mhxy_mobile.custom.daily_handlers._ocr_items", return_value=[]):
+        dismiss_popups(ctx, NodeAction(type="custom", custom_func="dismiss_popups"))
+    assert device.clicks == [(1144.0, 113.0)]
+
+
+def test_click_shop_buy_no_button_no_blind_click():
+    """Review P2：商铺窗口未打开（无「购买」按钮）时，click_shop_buy 不得回退盲点
+    (1010,366/656)——旧实现会盲点固定坐标并虚增购买计数。"""
+    device = DummyDevice()
+    ctx = PipelineContext(device=device)
+    ctx.variables["_last_frame_items"] = [
+        DummyOCRItem("商会", (663.0, 42.0)),
+        DummyOCRItem("金疮药", (525.0, 307.0)),
+        # 没有「购买」按钮
+    ]
+    click_shop_buy(ctx, NodeAction(type="custom", custom_func="click_shop_buy"))
+    assert device.clicks == []  # 绝不盲点
+    assert device.keys == []
+    assert ctx.variables.get("shop_buys_this_dialog", 0) == 0  # 未误增计数
+
+
+def test_buy_treasure_map_never_uses_stale_cross_pipeline_cache():
+    """Review P1 root cause：buy_treasure_map 必须基于当前帧实时 OCR，绝不能复用
+    _last_frame_items 里上一个 pipeline（如 shimen 链到 baotu）留下的缓存。
+
+    DummyDevice.screencap 返回 b"" -> 无新帧可用，此时才允许回退到
+    _last_frame_items（单测注入场景）。本用例验证链路场景下旧的「购买」按钮
+    仍存在于缓存时，由于有新鲜帧可用（构造能出帧的设备），必须用实时 OCR 结果，
+    而不是读缓存里的旧坐标。"""
+    import numpy as np
+    import cv2
+    device = DummyDevice()
+    img = np.full((720, 1280, 3), 255, dtype=np.uint8)
+    ok, buf = cv2.imencode(".png", img)
+    assert ok
+    # 能出新鲜帧的设备：screencap 返回真实帧数据（帧内容无「购买」按钮）
+    device.screencap = lambda raw=False: buf.tobytes()
+
+    ctx = PipelineContext(device=device)
+    ctx.variables["dig_count"] = 3
+    ctx.variables["baotu_dig_target"] = 10
+    ctx.variables["has_treasure_map"] = False
+    ctx.variables["treasure_map_buys_this_dig"] = 0
+    # 模拟上一个 pipeline 留下的陈旧缓存：里面有个「购买」按钮（坐标已失效）
+    ctx.variables["_last_frame_items"] = [
+        DummyOCRItem("商会", (663.0, 42.0)),
+        DummyOCRItem("藏宝图", (525.0, 307.0)),
+        DummyOCRItem("购买", (1010.0, 656.0)),
+    ]
+
+    # 实时帧 OCR 结果为空（商铺没开） -> 不得从缓存里找购买按钮盲点
+    with patch("plugins.mhxy_mobile.custom.daily_handlers._ocr_items", return_value=[]) as mock_ocr:
+        dh.buy_treasure_map(ctx, NodeAction(type="custom", custom_func="buy_treasure_map"))
+        assert mock_ocr.call_count == 1  # 走的是实时 OCR 分支
+    assert device.clicks == []  # 绝不盲点缓存里的旧坐标
+    assert ctx.variables["treasure_map_buys_this_dig"] == 0
+    assert ctx.variables["treasure_map_buy_attempts"] == 1
+
+
+def test_buy_treasure_map_uses_stale_cache_only_when_no_fresh_frame():
+    """兼容路径：无新鲜帧可得（DummyDevice screencap 返回 b""）时，回退到缓存注入
+    的条目用于单测，符合原语义。"""
+    device = DummyDevice()  # screencap 返回 b"" —— 没有新鲜帧
+    ctx = PipelineContext(device=device)
+    ctx.variables["dig_count"] = 3
+    ctx.variables["baotu_dig_target"] = 10
+    ctx.variables["has_treasure_map"] = False
+    ctx.variables["treasure_map_buys_this_dig"] = 0
+    ctx.variables["_last_frame_items"] = [
+        DummyOCRItem("商会", (663.0, 42.0)),
+        DummyOCRItem("藏宝图", (525.0, 307.0)),
+        DummyOCRItem("购买", (1010.0, 156.0)),  # 注意 y=156 < 450，不符合购买按钮 ROI
+    ]
+    dh.buy_treasure_map(ctx, NodeAction(type="custom", custom_func="buy_treasure_map"))
+    assert device.clicks == []  # ROI 过滤后无按钮 → 不点
+    assert ctx.variables["treasure_map_buy_attempts"] == 1

@@ -68,6 +68,7 @@ class BaseGamePlugin(abc.ABC):
 
         if pipeline.status == PipelineStatus.IDLE:
             pipeline.start()
+            self.on_pipeline_started(pipeline_name)
 
         # Capture current frame from device (prefer zero-copy screencap_mat if available)
         try:
@@ -80,6 +81,13 @@ class BaseGamePlugin(abc.ABC):
             frame = None
 
         return pipeline.tick(self.context, frame=frame)
+
+    def on_pipeline_started(self, pipeline_name: str, account_id: Optional[str] = None) -> None:
+        """Lifecycle hook invoked when a pipeline (re)starts, e.g. after a routine
+        retry. Subclasses reset pipeline-scoped transient state here so a retried
+        pipeline does not inherit counters that caused its failure (see routine.py
+        retry: variables intentionally survive a restart)."""
+        pass
 
     def on_pipeline_completed(self, pipeline_name: str, account_id: Optional[str] = None) -> None:
         """Lifecycle hook invoked when a pipeline finishes successfully."""

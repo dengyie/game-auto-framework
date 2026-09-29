@@ -167,3 +167,90 @@ def test_dag_watchdog_integration():
     assert "ESCAPE:LEVEL_1_MINOR" in ctx.history
     assert "healed_by_watchdog" in actions
 
+
+def test_dag_skip_on_stale_skips_custom_recognition_after_interactive_action():
+    """Review P1: a custom recognizer flagged ``skip_on_stale`` must not run on the
+    frame captured *before* the just-executed click (that frame cannot prove the
+    next screen). The tap tick falls through to the default next node instead, and
+    the recognizer is evaluated on the following (fresh) tick."""
+    calls = {"probe": 0}
+
+    pipeline_data = {
+        "name": "stale_probe",
+        "entry": "tap",
+        "nodes": [
+            {
+                "name": "tap",
+                "recognition": {"type": "always"},
+                "action": {"type": "click", "target_pos": [10, 10]},
+                "next": ["probe"],
+                "timeout_sec": 60.0,
+            },
+            {
+                "name": "probe",
+                "recognition": {"type": "custom", "custom_func": "counting", "skip_on_stale": True},
+                "action": {"type": "none"},
+                "timeout_sec": 60.0,
+            },
+        ],
+    }
+
+    pipeline = DAGPipeline.from_dict(pipeline_data)
+    ctx = PipelineContext()
+
+    def counting(c, frame, rec):
+        calls["probe"] += 1
+        return True
+
+    ctx.register_recognition("counting", counting)
+
+    pipeline.start()
+
+    # Tick 1: `tap` clicks; `probe` must NOT be evaluated against this stale frame.
+    pipeline.tick(ctx)
+    assert pipeline.current_node_name == "probe"
+    assert calls["probe"] == 0
+
+    # Tick 2: `probe` is now current and sees a fresh frame -> recognition fires.
+    pipeline.tick(ctx)
+    assert calls["probe"] == 1
+
+
+def test_dag_custom_recognition_without_flag_still_evaluated_on_stale_frame():
+    """Backward compatibility: recognizers without ``skip_on_stale`` keep the old
+    behavior (evaluated with the same tick's frame), so the flag is strictly opt-in."""
+    calls = {"probe": 0}
+
+    pipeline_data = {
+        "name": "stale_probe_unflagged",
+        "entry": "tap",
+        "nodes": [
+            {
+                "name": "tap",
+                "recognition": {"type": "always"},
+                "action": {"type": "click", "target_pos": [10, 10]},
+                "next": ["probe"],
+                "timeout_sec": 60.0,
+            },
+            {
+                "name": "probe",
+                "recognition": {"type": "custom", "custom_func": "counting"},
+                "action": {"type": "none"},
+                "timeout_sec": 60.0,
+            },
+        ],
+    }
+
+    pipeline = DAGPipeline.from_dict(pipeline_data)
+    ctx = PipelineContext()
+
+    def counting(c, frame, rec):
+        calls["probe"] += 1
+        return True
+
+    ctx.register_recognition("counting", counting)
+
+    pipeline.start()
+    pipeline.tick(ctx)
+    assert calls["probe"] == 1  # evaluated on the same (stale) tick
+

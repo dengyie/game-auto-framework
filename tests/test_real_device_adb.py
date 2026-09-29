@@ -149,7 +149,8 @@ def test_real_adb_server_api_pipeline():
 
     shot_res = client.get("/api/v1/screenshot")
     assert shot_res.status_code == 200
-    assert shot_res.headers["content-type"] == "image/jpeg"
+    # ADB screencap is PNG; VirtualDevice frames are JPEG (see image_media_type).
+    assert shot_res.headers["content-type"] == "image/png"
     assert len(shot_res.content) > 10000
 
     stop_res = client.post("/api/v1/tasks/stop")
