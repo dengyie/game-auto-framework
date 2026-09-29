@@ -267,7 +267,9 @@ def test_handle_quiz_clicks_bank_answer():
 def test_handle_quiz_miss_clicks_first_option():
     device = DummyDevice()
     ctx = _ctx_with(device)
+    # Header marker present: inside a genuine quiz window the upstream policy stands.
     items = [
+        DummyOCRItem("三界奇缘", (700.0, 50.0)),
         DummyOCRItem("与题库无关的稀奇古怪问题?", (700.0, 95.0)),
         DummyOCRItem("甲选项", (500.0, 300.0)),
         DummyOCRItem("乙选项", (800.0, 300.0)),
@@ -277,6 +279,25 @@ def test_handle_quiz_miss_clicks_first_option():
     dh.handle_quiz(ctx, NodeAction(type="custom", custom_func="handle_quiz"))
     assert ctx.variables["quiz_bank_hit"] is False
     assert device.clicks == [(500.0, 300.0)]  # upstream policy: first option on miss
+
+
+def test_handle_quiz_miss_without_header_refuses_blind_click():
+    """P2 fix 2026-09-30: a bank miss with no quiz header on screen means the
+    "question" is a misparsed banner/HUD — clicking the first option blind-fires
+    (live: 青丘奇珍 banner reached the miss path). Refusing and waiting is the
+    safe behavior."""
+    device = DummyDevice()
+    ctx = _ctx_with(device)
+    items = [
+        DummyOCRItem("与题库无关的稀奇古怪问题?", (700.0, 95.0)),
+        DummyOCRItem("甲选项", (500.0, 300.0)),
+        DummyOCRItem("乙选项", (800.0, 300.0)),
+    ]
+    with patch.object(dh, "_ocr_items", return_value=items):
+        dh.classify_screen(ctx, None)
+    dh.handle_quiz(ctx, NodeAction(type="custom", custom_func="handle_quiz"))
+    assert ctx.variables["quiz_bank_hit"] is False
+    assert device.clicks == []
 
 
 def test_handle_quiz_done_screen_presses_back():

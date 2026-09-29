@@ -36,12 +36,10 @@ class NodeRecognition(BaseModel):
     threshold: float = 0.8
     custom_func: Optional[str] = None
     condition: Optional[str] = None  # Optional expression evaluating against ctx.variables
-    skip_on_stale: bool = False  # custom recognizers that OCR the frame must not run on the
-    # pre-action frame of the tick that just clicked/swiped (e.g. bag probes right
-    # after the inventory-open tap). See dag.tick() stale-frame guard.
-    skip_on_stale: bool = False  # custom recognizers that OCR the frame must not run on the
-    # pre-action frame of the tick that just clicked/swiped (e.g. bag probes right
-    # after the inventory-open tap). See dag.tick() stale-frame guard.
+    # Custom recognizers that OCR the frame must not run on the pre-action frame of the
+    # tick that just clicked/swiped (e.g. bag probes right after the inventory-open tap).
+    # See dag.tick() stale-frame guard.
+    skip_on_stale: bool = False
 
 
 class NodeAction(BaseModel):
@@ -88,6 +86,9 @@ class PipelineContext:
         self.recognition_handlers: Dict[str, Callable[..., bool]] = {}
         self.action_handlers: Dict[str, Callable[..., None]] = {}
         self.history: List[str] = []
+        # Condition expressions whose evaluation already warned — avoid re-warning
+        # every tick (NameError during warm-up is debug-level and never warned).
+        self._warned_conditions: set = set()
 
     def register_recognition(self, name: str, handler: Callable[..., bool]) -> None:
         self.recognition_handlers[name] = handler
@@ -96,7 +97,13 @@ class PipelineContext:
         self.action_handlers[name] = handler
 
     def eval_condition(self, expr: str) -> bool:
-        """Safely evaluate simple variable condition expressions against context variables."""
+        """Safely evaluate simple variable condition expressions against context variables.
+
+        NameError (a variable not yet set during warm-up) is debug-level and silent.
+        Any other exception (typo'd attribute, type error) warns once per expression so a
+        mis-routed branch is not silently invisible (live 2026-09-30: a wrong condition
+        name made a branch unreachable and only debug-level logging hid it).
+        """
         if not expr:
             return True
         try:
@@ -105,15 +112,28 @@ class PipelineContext:
             locals_dict = dict(self.variables)
             locals_dict["variables"] = self.variables
             return bool(eval(expr, safe_globals, locals_dict))
+        except NameError as e:
+            logger.debug(f"Condition '{expr}' references unset variable: {e}")
+            return False
         except Exception as e:
-            logger.debug(f"Condition evaluation error for '{expr}': {e}")
+            if expr not in self._warned_conditions:
+                self._warned_conditions.add(expr)
+                logger.warning(f"Condition evaluation error for '{expr}': {e}")
             return False
 
 
 class DAGPipeline:
     """Executes a Directed Acyclic Graph / Finite State Machine workflow with perception and self-healing."""
 
-    def __init__(self, name: str, nodes: List[DAGNode], entry_node: str) -> None:
+    def __init__(
+        self,
+        name: str,
+        nodes: List[DAGNode],
+        entry_node: str,
+        stall_warn_ticks: int = 10,
+        stall_fail_ticks: int = 20,
+        stall_pixel_eps: float = 1.5,
+    ) -> None:
         self.name = name
         self.nodes: Dict[str, DAGNode] = {node.name: node for node in nodes}
         self.entry_node_name = entry_node
@@ -125,6 +145,58 @@ class DAGPipeline:
         # Separate regular nodes from high-priority interrupts (anti-bot)
         self.interrupt_nodes: List[DAGNode] = [n for n in nodes if n.is_interrupt]
         self._battle_detector = BattleDetector()
+
+        # Static-frame stall watchdog: the per-node timeout fires only when a single
+        # node never advances. It does NOT fire on oscillations (A->B->A->B) because
+        # each successful transition resets node_entered_time — and that is exactly
+        # the loop class observed in production (sense<->open_panel fallback, sense<->
+        # dialog_choice, dismiss × dead space; live 2026-09-29/30, 40-150 ticks each).
+        # A pair-repeat counter would false-positive on long battles (sense<->battle_step)
+        # and on escort travel (sense<->wait_walking, ~80 ticks). Instead, count how many
+        # consecutive ticks the *pre-action frame* is essentially unchanged: battles and
+        # travel animate constantly; a stuck dialog/popup does not. wait_expected (set by
+        # pure-wait handlers) exempts legitimate static waits.
+        self.stall_warn_ticks = stall_warn_ticks
+        self.stall_fail_ticks = stall_fail_ticks
+        self.stall_pixel_eps = stall_pixel_eps
+        self._static_streak = 0
+        self._last_sig: Optional[np.ndarray] = None
+        self._stall_warned = False
+
+    @staticmethod
+    def _frame_signature(frame: Any) -> Optional[np.ndarray]:
+        """Downscaled grayscale signature for cheap frame-to-frame change detection.
+
+        None if the frame is missing/undecodable (screencap failure path)."""
+        if frame is None:
+            return None
+        try:
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            return cv2.resize(gray, (64, 36)).astype(np.int16)
+        except Exception:
+            return None
+
+    def _static_streak_after(self, frame: Any, ctx: "PipelineContext") -> int:
+        """Advance/ reset the static-frame streak for this tick's pre-action frame."""
+        # Legitimate static wait (escort travel world map, manual idle node): the wait
+        # handler sets wait_expected for the next tick; exempt it so travel does not trip.
+        if ctx.variables.pop("wait_expected", None):
+            self._static_streak = 0
+            self._stall_warned = False
+            self._last_sig = self._frame_signature(frame)
+            return 0
+        sig = self._frame_signature(frame)
+        if sig is None or self._last_sig is None:
+            self._static_streak = 0
+        else:
+            diff = float(np.abs(sig.astype(np.float32) - self._last_sig.astype(np.float32)).mean())
+            if diff <= self.stall_pixel_eps:
+                self._static_streak += 1
+            else:
+                self._static_streak = 0
+                self._stall_warned = False
+        self._last_sig = sig
+        return self._static_streak
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> DAGPipeline:
@@ -139,6 +211,9 @@ class DAGPipeline:
         self.current_node_name = self.entry_node_name
         self.node_entered_time = time.time()
         self.retry_count = 0
+        self._static_streak = 0
+        self._stall_warned = False
+        self._last_sig = None
         logger.info(f"Pipeline [{self.name}] started at entry node [{self.entry_node_name}]")
 
     def _eval_recognition(self, node: DAGNode, ctx: PipelineContext, frame: Any) -> bool:
@@ -230,8 +305,11 @@ class DAGPipeline:
             return
 
         if act.type == "key" and act.key_code and ctx.device:
-            # Send key code if device supports it
-            if hasattr(ctx.device, "key_event"):
+            # AdbDevice's key API is press_key (key_event does not exist anywhere —
+            # this branch was a silent no-op for every key-type NodeAction).
+            if hasattr(ctx.device, "press_key"):
+                ctx.device.press_key(act.key_code)
+            elif hasattr(ctx.device, "key_event"):
                 ctx.device.key_event(act.key_code)
 
     def tick(self, ctx: PipelineContext, frame: Any = None) -> PipelineStatus:
@@ -272,13 +350,30 @@ class DAGPipeline:
             logger.error(f"Node [{self.current_node_name}] not found in pipeline")
             return self.status
 
-        # 3. Check Timeout on Current Node
+        # 3. Static-frame stall watchdog (catches oscillating loops the node timeout
+        # cannot see — every oscillating transition resets node_entered_time).
+        streak = self._static_streak_after(frame, ctx)
+        if streak >= self.stall_fail_ticks:
+            logger.error(
+                f"Stall watchdog: screen unchanged for {streak} consecutive ticks "
+                f"while stuck at node [{current_node.name}]; breaking pipeline as TIMEOUT"
+            )
+            self.status = PipelineStatus.TIMEOUT
+            return self.status
+        if streak >= self.stall_warn_ticks and not self._stall_warned:
+            self._stall_warned = True
+            logger.warning(
+                f"Stall watchdog: screen unchanged for {streak} consecutive ticks "
+                f"at node [{current_node.name}] — possible stuck loop"
+            )
+
+        # 4. Check Timeout on Current Node
         if now - self.node_entered_time > current_node.timeout_sec:
             logger.warning(f"Node [{current_node.name}] timed out (> {current_node.timeout_sec}s)")
             self.status = PipelineStatus.TIMEOUT
             return self.status
 
-        # 4. Check Current Node Recognition & Action
+        # 5. Check Current Node Recognition & Action
         if self._eval_recognition(current_node, ctx, frame):
             self._execute_action(current_node, ctx)
             ctx.history.append(current_node.name)
@@ -333,5 +428,14 @@ class DAGPipeline:
                 self.current_node_name = current_node.next_nodes[0]
                 self.node_entered_time = now
                 self.retry_count = 0
+            else:
+                # Recognition keeps succeeding but the node never advances: give
+                # retry_count real semantics instead of leaving it dead code.
+                self.retry_count += 1
+                if self.retry_count == current_node.max_retries:
+                    logger.warning(
+                        f"Node [{current_node.name}] recognized without advancing "
+                        f"{self.retry_count}x (max_retries={current_node.max_retries}) — possible stall"
+                    )
 
         return self.status

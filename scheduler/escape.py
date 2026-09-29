@@ -23,13 +23,16 @@ class SelfHealingEscapeManager:
         self,
         stall_threshold_sec: float = 30.0,
         max_level_1_attempts: int = 3,
+        max_level_2_attempts: int = 3,
         on_minor_escape: Optional[Callable[[], None]] = None,
         on_medium_escape: Optional[Callable[[], None]] = None,
         on_major_escape: Optional[Callable[[], None]] = None,
     ) -> None:
         self.stall_threshold_sec = stall_threshold_sec
         self.max_level_1_attempts = max_level_1_attempts
+        self.max_level_2_attempts = max_level_2_attempts
         self.level_1_count = 0
+        self.level_2_count = 0
         self.last_progress_time = time.time()
 
         self._on_minor = on_minor_escape or self._default_minor
@@ -40,6 +43,7 @@ class SelfHealingEscapeManager:
         """Called whenever a valid pipeline step or recognition succeeds."""
         self.last_progress_time = time.time()
         self.level_1_count = 0
+        self.level_2_count = 0
 
     def check_and_heal(self) -> Optional[EscapeLevel]:
         """Check if execution is stalled and trigger the appropriate recovery tier."""
@@ -58,9 +62,16 @@ class SelfHealingEscapeManager:
             self.last_progress_time = time.time()  # Give grace period
             return EscapeLevel.LEVEL_1_MINOR
 
-        # Tier 2: Medium escape (e.g. Teleport to Chang'an)
-        if stalled_time < self.stall_threshold_sec * 3:
-            logger.warning(f"[Escape Tier 2] Tier 1 exhausted. Executing medium hub teleport recovery.")
+        # Tier 2: Medium escape (e.g. Teleport to Chang'an), capped: every tier fire
+        # refreshes last_progress_time, so "stalled >= 3x threshold" (the old Tier-3
+        # gate) could never be reached and Tier 3 was unreachable dead code — the
+        # abort callback wired by the daily runner never ran (2026-09-30 re-review).
+        if self.level_2_count < self.max_level_2_attempts:
+            self.level_2_count += 1
+            logger.warning(
+                f"[Escape Tier 2] Tier 1 exhausted. Executing medium hub teleport recovery "
+                f"({self.level_2_count}/{self.max_level_2_attempts})."
+            )
             self._on_medium()
             self.last_progress_time = time.time()
             return EscapeLevel.LEVEL_2_MEDIUM

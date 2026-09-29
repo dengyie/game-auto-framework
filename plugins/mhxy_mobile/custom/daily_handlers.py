@@ -181,9 +181,36 @@ def _center(item: Any) -> Tuple[float, float]:
 
 
 def _click(ctx: PipelineContext, x: float, y: float) -> None:
+    # Edge-zone redline enforced in code, not just in docs: a malformed OCR box or a
+    # stale constant must never land a tap on the screen bezel (live 2026-09-30 review).
+    frame = ctx.variables.get("_last_frame")
+    if frame is not None and hasattr(frame, "shape") and getattr(frame, "ndim", 0) == 3:
+        fh, fw = frame.shape[:2]
+        if not (10 <= x <= fw - 10 and 10 <= y <= fh - 10):
+            logger.warning(
+                f"[click] Blocked click at ({x:.0f}, {y:.0f}) — outside safe bounds "
+                f"{fw}x{fh} (edge-zone redline)"
+            )
+            return
     if ctx.device:
         ctx.device.click(x, y)
         time.sleep(0.1)
+
+
+def _frame_scale(ctx: PipelineContext) -> Tuple[float, float]:
+    """Scale 1280x720-baseline fixed coordinates by the actual frame size.
+
+    The module constants were designed on a 1280x720 baseline, but the MuMu instance
+    runs at 1600x900 — on it the stale TOPBAR_ACTIVITY (353,64) landed on the wrong
+    HUD button (基础设置, live 2026-09-30) while the real 活动 button sits at (439,79)
+    = (353,64) * 1.25. Returns (1.0, 1.0) without a frame (tests / no classification yet).
+    """
+    frame = ctx.variables.get("_last_frame")
+    if frame is not None and hasattr(frame, "shape") and getattr(frame, "ndim", 0) == 3:
+        fh, fw = frame.shape[:2]
+        if fw > 0 and fh > 0:
+            return (fw / 1280.0, fh / 720.0)
+    return (1.0, 1.0)
 
 
 def _locate_corner_x(ctx: PipelineContext, items: list, x_min: int = 1000, y_max: int = 200) -> Optional[Tuple[float, float]]:
@@ -462,6 +489,9 @@ def classify_screen(ctx: PipelineContext, frame: Any, rec: NodeRecognition = Non
     )
     if v["panel_open"]:
         v["panel_closed_streak"] = 0
+        # A successful open resets the fallback miss counter (open_activity_panel
+        # increments it while guessing the 活动 button position behind overlays).
+        v["panel_fallback_count"] = 0
     else:
         # One missed read must not wipe the visit: while the list is scrolling the
         # tab labels and card names all leave the frame for a tick, and resetting
@@ -584,9 +614,17 @@ def classify_screen(ctx: PipelineContext, frame: Any, rec: NodeRecognition = Non
     # popup dismiss) blind-clicks 申请入帮 forever (live 2026-09-26, 171 clicks,
     # 宝图 abandoned at 12:11). It is a popup, closed via 本周不再提醒.
     guild_recruit = any("推荐帮派" in t or "申请入帮" in t or "本周不再提醒" in t for t in texts)
+    # Scrolling world activity banners (青丘奇珍 / 巅峰联赛 / 时空之隙) and the
+    # "点击任意地方继续" story-advance prompt land in the question ROI and pair with
+    # stray mid-screen candidate/banner text as "options", so quiz_answer blind-clicks
+    # first option on the world HUD — never a real quiz (live 2026-09-29, 师门 10/10).
+    banner_noise = any(
+        kw in t for t in texts
+        for kw in ("青丘奇珍", "灵狐栖梦", "时空之隙", "巅峰联赛", "点击任意地方继续", "正在火热进行中")
+    )
     v["fashion_showroom"] = fashion_showroom
     v["sect_goal_window"] = sect_goal_window
-    v["quiz_open"] = (not v["in_battle"]) and (not v["dialog_open"]) and (not v["panel_open"]) and (not v["deposit_open"]) and (main_ui_marker is None) and (not guide_popup) and (not v["escort_traveling"]) and (not chief_vote_popup) and (not jianhui_popup) and (not stall_open) and (not guild_recruit) and (not fashion_showroom) and (not sect_goal_window) and (not v["turnin_open"]) and bool(
+    v["quiz_open"] = (not v["in_battle"]) and (not v["dialog_open"]) and (not v["panel_open"]) and (not v["deposit_open"]) and (main_ui_marker is None) and (not guide_popup) and (not v["escort_traveling"]) and (not chief_vote_popup) and (not jianhui_popup) and (not stall_open) and (not guild_recruit) and (not fashion_showroom) and (not sect_goal_window) and (not v["turnin_open"]) and (not banner_noise) and bool(
         quiz_header or quiz_done_hit or (quiz_question_item is not None and quiz_option_count >= 2)
     )
 
@@ -629,7 +667,13 @@ def classify_screen(ctx: PipelineContext, frame: Any, rec: NodeRecognition = Non
                 v["current_task_name"] = "秘境降妖"
                 curr_task = "秘境降妖"
 
-        if any(cnt in tracker_item.text for cnt in ("(10/10)", "（10/10）", "(20/20)", "（20/20）", "(3/3)", "（3/3）")):
+        # Bracket-agnostic full-progress detection: OCR often mixes half/full-width
+        # parens ("（10/10)" or "(10/10）"), which the exact-match literals missed and
+        # left a 10/10 task un-marked-complete (live 2026-09-29, 师门 reached 10/10).
+        _tracker_full = re.search(r"[（(]\s*(\d+)\s*/\s*(\d+)\s*[）)]", tracker_item.text)
+        if any(cnt in tracker_item.text for cnt in ("(10/10)", "（10/10）", "(20/20)", "（20/20）", "(3/3)", "（3/3）")) or (
+            _tracker_full and _tracker_full.group(1) == _tracker_full.group(2) and int(_tracker_full.group(2)) in (3, 10, 20)
+        ):
             v["current_task_done"] = True
             logger.info(f"[classify] Current task [{curr_task}] completed according to tracker: {tracker_item.text}")
             if curr_task and curr_task not in completed_tasks:
@@ -1514,6 +1558,7 @@ def click_dialog_choice(ctx: PipelineContext, act: NodeAction) -> None:
     if battle_opt is not None:
         bx, by = _center(battle_opt)
         logger.info(f"[dialog] Clicking battle entry [{battle_opt.text}] at ({bx:.0f}, {by:.0f})")
+        ctx.variables["dialog_fallback_count"] = 0
         _click(ctx, bx, by)
         time.sleep(2.0)
         return
@@ -1522,6 +1567,7 @@ def click_dialog_choice(ctx: PipelineContext, act: NodeAction) -> None:
     if skip is not None:
         sx, sy = _center(skip)
         logger.info(f"[dialog] Clicking [{skip.text}] at ({sx:.0f}, {sy:.0f})")
+        ctx.variables["dialog_fallback_count"] = 0
         _click(ctx, sx, sy)
         time.sleep(1.2)
         return
@@ -1569,6 +1615,7 @@ def click_dialog_choice(ctx: PipelineContext, act: NodeAction) -> None:
         if matched is not None:
             mx, my = _center(matched)
             logger.info(f"[dialog] Clicking task-specific option [{matched.text}] at ({mx:.0f}, {my:.0f})")
+            ctx.variables["dialog_fallback_count"] = 0
             _click(ctx, mx, my)
             time.sleep(1.5)
             return
@@ -1607,6 +1654,7 @@ def click_dialog_choice(ctx: PipelineContext, act: NodeAction) -> None:
     if generic_choice is not None:
         gx, gy = _center(generic_choice)
         logger.info(f"[dialog] Clicking dialogue choice [{generic_choice.text}] at ({gx:.0f}, {gy:.0f})")
+        ctx.variables["dialog_fallback_count"] = 0
         _click(ctx, gx, gy)
         time.sleep(1.5)
         return
@@ -1622,7 +1670,29 @@ def click_dialog_choice(ctx: PipelineContext, act: NodeAction) -> None:
         time.sleep(1.2)
         return
 
+    # Degradation: the default-slot click is a guess made at the moment OCR failed —
+    # the least trustworthy moment. It is a blind click by design (and the safety
+    # redline says none), so cap it: after 3 consecutive fallbacks with no matched
+    # choice in between, the safer move is BACK + wait, letting the tracker re-derive
+    # or the popup dismisser take over (live 2026-09-30 review).
+    fb = int(ctx.variables.get("dialog_fallback_count", 0))
+    if fb >= 3:
+        logger.warning(
+            f"[dialog] Default-slot fallback already tried {fb}x with no matched choice — "
+            f"pressing BACK instead of blind-clicking (1086, 468) again"
+        )
+        # Reset (not ++): the counter must not latch at >=3 forever — the BACK likely
+        # closes this dialog, and the NEXT dialog (a different one) deserves a fresh
+        # 3-try cycle, not an immediate cancel. Latching made every later OCR-miss
+        # dialog a reflex BACK that cancels it (2026-09-30 re-review).
+        ctx.variables["dialog_fallback_count"] = 0
+        if ctx.device is not None and hasattr(ctx.device, "press_key"):
+            ctx.device.press_key(4)
+        time.sleep(1.2)
+        return
+
     logger.info("[dialog] Fallback clicking default dialogue choice at (1086, 468)")
+    ctx.variables["dialog_fallback_count"] = fb + 1
     _click(ctx, 1086, 468)
     time.sleep(1.5)
 
@@ -1665,6 +1735,10 @@ def click_task_tracker(ctx: PipelineContext, act: NodeAction) -> None:
 
 def wait_walking(ctx: PipelineContext, act: NodeAction = None) -> None:
     """Wait while character is pathfinding (自动寻路中)."""
+    # Exempt the next tick from the DAG stall watchdog: pathfinding/escort screens are
+    # legitimately near-static for minutes (world map + countdown) — a static frame
+    # here is not a stuck loop (scheduler/dag.py).
+    ctx.variables["wait_expected"] = True
     logger.info("[walking] Character is auto-pathfinding, waiting 2.5s...")
     time.sleep(2.5)
 
@@ -1710,8 +1784,34 @@ def open_activity_panel(ctx: PipelineContext, act: NodeAction) -> None:
         ay = by + bh / 2
         src = f"blob '{act_btn.text.strip()[:10]}' left end"
     else:
-        ax, ay = TOPBAR_ACTIVITY
-        src = "HUD-fixed" if act_btn is not None else "fallback"
+        # Fallback to the HUD-fixed coordinate when OCR failed to find any 活动 text —
+        # this usually means an overlay is covering the top bar (live 2026-09-30:
+        # a promo carousel hid the HUD, OCR saw nothing, and the stale 1280x720
+        # constant (353,64) landed on 基础设置 at 1600x900). Two fixes:
+        # 1) scale the 1280x720-baseline constant by the real frame size so it lands
+        #    on the right button on any resolution;
+        # 2) if even the scaled fallback keeps failing (panel still not open), stop
+        #    blind-clicking and press BACK to clear the blocking overlay instead.
+        fb_count = int(ctx.variables.get("panel_fallback_count", 0))
+        if fb_count >= 3:
+            logger.warning(
+                f"[open_panel] 活动 fallback missed {fb_count}x in a row — overlay likely "
+                f"blocking OCR; pressing BACK instead of clicking again"
+            )
+            # Reset (not ++): the BACK should clear the blocking overlay, and the next
+            # attempt must retry the (now-unobstructed) scaled tap — a latched >=3
+            # counter kept pressing BACK forever even after the overlay was gone and
+            # 活动 became tappable again (2026-09-30 re-review). classify_screen resets
+            # this counter too whenever the panel is actually open.
+            ctx.variables["panel_fallback_count"] = 0
+            if ctx.device is not None and hasattr(ctx.device, "press_key"):
+                ctx.device.press_key(4)
+            time.sleep(1.2)
+            return
+        sx, sy = _frame_scale(ctx)
+        ax, ay = (TOPBAR_ACTIVITY[0] * sx, TOPBAR_ACTIVITY[1] * sy)
+        ctx.variables["panel_fallback_count"] = fb_count + 1
+        src = "HUD-fixed" if act_btn is not None else "fallback-scaled"
     _click(ctx, ax, ay)
     logger.info(f"daily: tap top-bar 活动 button at ({ax:.0f}, {ay:.0f}) [{src}]")
     time.sleep(2.5)
@@ -1999,6 +2099,8 @@ def always_true(ctx: PipelineContext, frame: Any, rec: NodeRecognition = None) -
 
 def noop_wait(ctx, act=None):
     """Pause node: sleep for act.duration (NodeAction model has no args dict)."""
+    # Exempt the next tick from the DAG stall watchdog: this node exists to wait.
+    ctx.variables["wait_expected"] = True
     seconds = 0.5
     if isinstance(act, NodeAction):
         seconds = float(act.duration or 0.5)
@@ -2169,7 +2271,10 @@ def handle_quiz(ctx: PipelineContext, act: NodeAction) -> None:
     # 2.5) A popup is covering the quiz UI (system notice / upgrade guide): dismiss
     # it instead of idling or blind-clicking its texts as if they were an answer.
     def _dismiss_covering_popup() -> None:
-        if _find(items, lambda it: any(kw in it.text for kw in ("三界奇缘", "科举", "答题", "请作答")) and it.center[1] < 200):
+        # Same header test (and threshold) as the bank-miss guard below: a quiz
+        # header anywhere above y=250 means the × at top right is the quiz's own
+        # exit button, not a covering popup's close button.
+        if _find(items, lambda it: any(kw in it.text for kw in ("三界奇缘", "科举", "答题", "请作答")) and it.center[1] < 250):
             return False  # quiz header visible: the × is the quiz's own exit button
         xbtn = _find(items, lambda it: it.text in ("×", "X", "x", "✕") and 500 < it.center[0] < 1250 and it.center[1] < 300)
         if xbtn is not None:
@@ -2231,7 +2336,22 @@ def handle_quiz(ctx: PipelineContext, act: NodeAction) -> None:
         time.sleep(1.2)
         return
 
-    # 5) Upstream fallback policy: bank miss -> click the FIRST option
+    # 5) Upstream fallback policy: bank miss -> click the FIRST option. Guard: only
+    # inside a genuine quiz window (header marker present). Without one, a bank miss
+    # means the "question" is a misparsed banner/HUD (live 2026-09-29: the 青丘奇珍
+    # banner reached here and blind-fired the first "option"). Admitting the screen
+    # cannot be read and waiting is the safe behavior.
+    quiz_header_present = bool(_find(
+        items,
+        lambda it: any(kw in it.text for kw in ("三界奇缘", "科举", "答题", "请作答")) and it.center[1] < 250,
+    ))
+    if not quiz_header_present:
+        logger.warning(
+            f"[quiz] Bank miss for '{question[:40]}' and no quiz header on screen — "
+            f"refusing first-option blind click, waiting"
+        )
+        time.sleep(1.0)
+        return
     logger.warning(f"[quiz] Bank miss for '{question[:40]}', clicking first option (upstream policy)")
     _click(ctx, option_items[0].center[0], option_items[0].center[1])
     time.sleep(1.5)
