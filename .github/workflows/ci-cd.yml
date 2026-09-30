@@ -88,7 +88,6 @@ jobs:
             --exclude='.pytest_cache' \
             --exclude='logs/' \
             --exclude='reports/' \
-            --exclude='config/accounts.json' \
             --exclude='.DS_Store' \
             -e "ssh -i ~/.ssh/deploy_key -p $VPS_PORT -o StrictHostKeyChecking=yes" \
             ./ "$VPS_USER@$VPS_HOST:/opt/game-auto-framework/"
