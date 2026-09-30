@@ -90,15 +90,45 @@ class AdbInputDriver(BaseInputDriver):
     def swipe(self, sx: int, sy: int, ex: int, ey: int, duration_ms: int = 300) -> None:
         self._run_adb("input", "swipe", str(sx), str(sy), str(ex), str(ey), str(duration_ms))
 
-    def key_down(self, key_code: str) -> None:
+    def key_down(self, key_code: Union[int, str]) -> None:
         self._run_adb("input", "keyevent", str(key_code))
 
-    def key_up(self, key_code: str) -> None:
+    def key_event(self, key_code: Union[int, str]) -> None:
+        self.key_down(key_code)
+
+    def key_up(self, key_code: Union[int, str]) -> None:
         pass
 
     def text(self, content: str) -> None:
-        """Type text string via ADB input text."""
-        self._run_adb("input", "text", content)
+        """Type text string via ADB input text or ADB_INPUT_B64 broadcast."""
+        if not content:
+            return
+
+        has_non_ascii = any(ord(c) > 127 for c in content)
+
+        if has_non_ascii:
+            try:
+                import base64
+                b64_msg = base64.b64encode(content.encode("utf-8")).decode("utf-8")
+                res = self._run_adb("am", "broadcast", "-a", "ADB_INPUT_B64", "--es", "msg", b64_msg)
+                if res.returncode == 0 and "Broadcast completed: result=0" in (res.stdout or ""):
+                    return
+            except Exception as e:
+                logger.debug(f"ADB_INPUT_B64 broadcast fallback: {e}")
+
+        # ASCII / Fallback handling: escape shell metacharacters and replace space with %s
+        escaped_tokens = []
+        for ch in content:
+            if ch == " ":
+                escaped_tokens.append("%s")
+            elif ch in "'\"&;()<>$`\\|*?":
+                escaped_tokens.append("\\" + ch)
+            elif ord(ch) <= 127:
+                escaped_tokens.append(ch)
+            else:
+                continue
+        if escaped_tokens:
+            self._run_adb("input", "text", "".join(escaped_tokens))
 
 
 class AdbDevice(BaseDevice):
@@ -373,6 +403,10 @@ class AdbDevice(BaseDevice):
     def press_key(self, key_code: Union[int, str]) -> None:
         """Send keyevent (e.g. 4 for BACK, 66 for ENTER) to ADB device."""
         self._driver.key_down(str(key_code))
+
+    def key_event(self, key_code: Union[int, str]) -> None:
+        """Alias for press_key for unified cross-driver compatibility."""
+        self.press_key(key_code)
 
     def set_device_resolution(self, width: int = 1280, height: int = 720) -> bool:
         """Override physical display resolution using wm size."""

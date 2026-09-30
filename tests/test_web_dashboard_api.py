@@ -162,6 +162,31 @@ def test_video_stream_and_device_action_endpoints(client):
     assert key_res.status_code == 200
     assert key_res.json()["keycode"] == 4
 
+    # Test keyboard key events (ENTER, DEL, SPACE)
+    enter_res = client.post(
+        "/api/v1/cluster/instances/stream_test_inst/action",
+        json={"action": "key", "keycode": 66},
+    )
+    assert enter_res.status_code == 200
+    assert enter_res.json()["keycode"] == 66
+
+    # Test text input actions (ASCII and Chinese UTF-8)
+    text_ascii_res = client.post(
+        "/api/v1/cluster/instances/stream_test_inst/action",
+        json={"action": "text", "text": "Mhxy_Auto_2026@163.com"},
+    )
+    assert text_ascii_res.status_code == 200
+    assert text_ascii_res.json()["action"] == "text"
+    assert text_ascii_res.json()["text"] == "Mhxy_Auto_2026@163.com"
+
+    text_cn_res = client.post(
+        "/api/v1/cluster/instances/stream_test_inst/action",
+        json={"action": "text", "text": "抓鬼日常队伍速来111"},
+    )
+    assert text_cn_res.status_code == 200
+    assert text_cn_res.json()["action"] == "text"
+    assert text_cn_res.json()["text"] == "抓鬼日常队伍速来111"
+
     # 4. Test instance screenshot
     shot_res = client.get("/api/v1/cluster/instances/stream_test_inst/screenshot")
     assert shot_res.status_code == 200

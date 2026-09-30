@@ -41,6 +41,10 @@ class BaseInputDriver(abc.ABC):
         """Release a key."""
         pass
 
+    def text(self, content: str) -> None:
+        """Type text string."""
+        pass
+
 
 class VirtualInputDriver(BaseInputDriver):
     """In-memory virtual input driver for testing, simulation, and headless observation."""
@@ -69,6 +73,9 @@ class VirtualInputDriver(BaseInputDriver):
 
     def key_up(self, key_code: str) -> None:
         self.event_log.append(f"KEY_UP({key_code})")
+
+    def text(self, content: str) -> None:
+        self.event_log.append(f"TEXT({content})")
 
 
 class HumanizedController:

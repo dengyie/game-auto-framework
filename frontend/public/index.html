@@ -361,6 +361,24 @@
               <span id="icon-nav-hint"></span> 提示: 直接点击画面任意位置可下发高精度虚拟触屏点击
             </div>
           </div>
+
+          <!-- PC Keyboard Direct Input Bar & Keystroke Passthrough -->
+          <div class="virtual-nav-bar" style="margin-top:8px; background:rgba(30,41,59,0.7); border:1px solid var(--border-color); border-radius:8px; padding:10px 14px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+            <span style="font-size:0.85rem; font-weight:700; color:var(--cyan); display:flex; align-items:center; gap:6px;">
+              ⌨️ 电脑键盘输入:
+            </span>
+            <input type="text" id="stream-text-input" placeholder="输入文字/账号/密码/指令，按回车(Enter)立即输入到手机..." style="flex:1; min-width:260px; padding:7px 12px; background:var(--bg-card); border:1px solid var(--border-color); border-radius:6px; color:#fff; font-size:0.88rem;" onkeydown="handleTextInputKeyDown(event)">
+            <button class="primary" onclick="submitTextInput()" style="padding:6px 16px; font-size:0.85rem;">发送到设备 (Enter)</button>
+            <div class="nav-btn-group">
+              <button onclick="sendDeviceKey(67)" title="退格删除">⌫ 退格</button>
+              <button onclick="sendDeviceKey(66)" title="确定回车">⏎ 确认</button>
+              <button onclick="sendDeviceKey(62)" title="空格">␣ 空格</button>
+            </div>
+            <label style="display:flex; align-items:center; gap:6px; font-size:0.82rem; color:var(--text-muted); cursor:pointer; margin-left:auto; user-select:none;">
+              <input type="checkbox" id="stream-keyboard-capture" onchange="toggleKeyboardCapture()">
+              <span id="label-keyboard-capture">开启键盘实时直通 (在画面直接打字)</span>
+            </label>
+          </div>
         </div>
 
         <!-- Matrix View (5-Split Grid) -->
@@ -1338,13 +1356,117 @@
           body: JSON.stringify({ action: 'key', keycode: keycode })
         });
         if (res.ok) {
-          showToast(`虚拟按键 Keycode: ${keycode} 执行完成`);
+          showToast(`按键 [${keycode}] 发送成功`);
         }
       } catch (err) {
         showToast('按键发送失败', true);
       }
     }
     window.sendDeviceKey = sendDeviceKey;
+
+    async function sendDeviceText(text) {
+      if (!text) return false;
+      const targetInst = streamInstance === 'global' ? 'inst_01' : streamInstance;
+      try {
+        const res = await fetch(`/api/v1/cluster/instances/${targetInst}/action`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'text', text: text })
+        });
+        if (res.ok) {
+          const preview = text.length > 25 ? text.substring(0, 25) + '...' : text;
+          showToast(`文本已输入到设备: "${preview}"`);
+          return true;
+        } else {
+          showToast('文本输入失败', true);
+          return false;
+        }
+      } catch (err) {
+        showToast('文本输入请求异常', true);
+        return false;
+      }
+    }
+    window.sendDeviceText = sendDeviceText;
+
+    async function submitTextInput() {
+      const inputEl = document.getElementById('stream-text-input');
+      if (!inputEl) return;
+      const val = inputEl.value;
+      if (!val) {
+        showToast('请输入要发送到手机的内容', true);
+        return;
+      }
+      const ok = await sendDeviceText(val);
+      if (ok) {
+        inputEl.value = '';
+      }
+    }
+    window.submitTextInput = submitTextInput;
+
+    function handleTextInputKeyDown(event) {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        submitTextInput();
+      }
+    }
+    window.handleTextInputKeyDown = handleTextInputKeyDown;
+
+    let keyboardCaptureActive = false;
+    function toggleKeyboardCapture() {
+      const cb = document.getElementById('stream-keyboard-capture');
+      keyboardCaptureActive = cb ? cb.checked : !keyboardCaptureActive;
+      const lbl = document.getElementById('label-keyboard-capture');
+      if (lbl) {
+        lbl.style.color = keyboardCaptureActive ? 'var(--cyan)' : 'var(--text-muted)';
+        lbl.style.fontWeight = keyboardCaptureActive ? '700' : 'normal';
+      }
+      showToast(keyboardCaptureActive ? '⌨️ 电脑键盘实时直通已开启 (退格/回车/方向键/字符直接输入到设备)' : '键盘实时直通已关闭');
+    }
+    window.toggleKeyboardCapture = toggleKeyboardCapture;
+
+    // Global Key Listener for Direct Keyboard Passthrough
+    window.addEventListener('keydown', (e) => {
+      if (!keyboardCaptureActive || currentTab !== 'stream') return;
+
+      // If user is focused on an input box or textarea, do not intercept
+      const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+      if (activeTag === 'input' || activeTag === 'textarea' || (document.activeElement && document.activeElement.isContentEditable)) {
+        return;
+      }
+
+      // Map PC keys to Android keycodes
+      if (e.key === 'Backspace') {
+        e.preventDefault();
+        sendDeviceKey(67);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        sendDeviceKey(66);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        sendDeviceKey(4);
+      } else if (e.key === 'Tab') {
+        e.preventDefault();
+        sendDeviceKey(61);
+      } else if (e.key === ' ') {
+        e.preventDefault();
+        sendDeviceKey(62);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        sendDeviceKey(19);
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        sendDeviceKey(20);
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        sendDeviceKey(21);
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        sendDeviceKey(22);
+      } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        sendDeviceText(e.key);
+      }
+    });
 
     async function sendDeviceSwipe(dir) {
       const targetInst = streamInstance === 'global' ? 'inst_01' : streamInstance;

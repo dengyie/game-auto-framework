@@ -5,7 +5,7 @@ Defines unified contracts across Windows, macOS, Linux (ADB / Headless), and Vir
 
 from __future__ import annotations
 import abc
-from typing import Any, Optional, Tuple
+from typing import Any, Optional, Tuple, Union
 from loguru import logger
 
 from core.input.driver import BaseInputDriver, HumanizedController
@@ -80,3 +80,17 @@ class BaseDevice(abc.ABC):
     def swipe(self, sx: float, sy: float, ex: float, ey: float, steps: int = 25) -> Any:
         """Convenience method to execute humanized Bezier swipe."""
         return self.controller.human_swipe(sx, sy, ex, ey, steps=steps)
+
+    def input_text(self, content: str) -> None:
+        """Type text string onto device."""
+        if hasattr(self.input_driver, "text"):
+            self.input_driver.text(content)
+
+    def press_key(self, key_code: Union[int, str]) -> None:
+        """Send key press event to device."""
+        if hasattr(self.input_driver, "key_down"):
+            self.input_driver.key_down(str(key_code))
+
+    def key_event(self, key_code: Union[int, str]) -> None:
+        """Alias for press_key for unified cross-driver compatibility."""
+        self.press_key(key_code)

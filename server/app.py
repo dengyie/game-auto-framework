@@ -904,16 +904,18 @@ def send_instance_action(instance_id: str, req: DeviceActionRequest) -> Dict[str
         device.swipe(float(req.x), float(req.y), float(req.x2), float(req.y2))
         return {"status": "ok", "action": "swipe", "instance_id": instance_id}
     elif req.action == "key":
-        keycode = req.keycode or 4
+        keycode = req.keycode if req.keycode is not None else 4
         if hasattr(device, "key_event"):
             device.key_event(keycode)
+        elif hasattr(device, "press_key"):
+            device.press_key(keycode)
         return {"status": "ok", "action": "key", "keycode": keycode, "instance_id": instance_id}
     elif req.action == "text":
         if req.text is None:
             raise HTTPException(status_code=400, detail="Action 'text' requires 'text'.")
         if hasattr(device, "input_text"):
             device.input_text(req.text)
-        return {"status": "ok", "action": "text", "instance_id": instance_id}
+        return {"status": "ok", "action": "text", "text": req.text, "instance_id": instance_id}
     else:
         raise HTTPException(status_code=400, detail=f"Unsupported action: {req.action}")
 

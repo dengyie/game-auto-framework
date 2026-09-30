@@ -126,6 +126,24 @@ def test_real_adb_device_app_lifecycle():
 
 
 @skip_if_no_adb
+def test_real_adb_keyboard_and_text_input():
+    """Verify keyevent dispatch and text input (ASCII & Unicode) on live device."""
+    dev = DeviceFactory.create(device_type="adb", serial=CONNECTED_SERIAL)
+    assert dev.connect() is True
+
+    # 1. Test key_event / press_key
+    dev.press_key(66)  # KEYCODE_ENTER
+    dev.key_event(67)  # KEYCODE_DEL
+
+    # 2. Test input_text with ASCII and spaces
+    dev.input_text("test_user_2026")
+    dev.input_text("hello world")
+
+    # 3. Test Chinese / Unicode input
+    dev.input_text("测试输入")
+
+
+@skip_if_no_adb
 def test_real_adb_server_api_pipeline():
     """Verify FastAPI VPS server start, screenshot, and stop lifecycle against real ADB device."""
     client = TestClient(app)
