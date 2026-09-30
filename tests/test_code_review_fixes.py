@@ -138,3 +138,40 @@ def test_transcode_frame_to_jpeg_and_lru_cache():
     # Non-PNG frames should pass through unchanged
     raw_dummy = b"not_a_png_or_jpeg"
     assert transcode_frame_to_jpeg(raw_dummy) == raw_dummy
+
+
+def test_supervisor_alert_cooldown_prevents_storms():
+    """Verify that repeated error conditions on disconnected devices do not spam webhooks."""
+    from cluster.supervisor import ClusterSupervisor, SupervisorConfig
+
+    mock_notifier = MagicMock()
+    supervisor = ClusterSupervisor(
+        config=SupervisorConfig(enable_webhook_alerts=True),
+        notifier=mock_notifier,
+    )
+    supervisor._alert_min_interval_sec = 300.0
+
+    # First dispatch should succeed
+    res1 = supervisor._dispatch_alert("Test Alert", "Detail message 1")
+    assert res1 is True
+    assert mock_notifier.send_alert.call_count == 1
+    assert supervisor.total_alerts_sent == 1
+
+    # Immediate second dispatch with same title should be suppressed by cooldown
+    res2 = supervisor._dispatch_alert("Test Alert", "Detail message 2")
+    assert res2 is False
+    assert mock_notifier.send_alert.call_count == 1
+    assert supervisor.total_alerts_sent == 1
+
+    # Different title should still dispatch
+    res3 = supervisor._dispatch_alert("Different Alert", "Detail message 3")
+    assert res3 is True
+    assert mock_notifier.send_alert.call_count == 2
+    assert supervisor.total_alerts_sent == 2
+
+    # After cooldown expires, the original title can dispatch again
+    supervisor._alert_cooldowns["Test Alert"] = time.time() - 301.0
+    res4 = supervisor._dispatch_alert("Test Alert", "Detail message 4")
+    assert res4 is True
+    assert mock_notifier.send_alert.call_count == 3
+    assert supervisor.total_alerts_sent == 3

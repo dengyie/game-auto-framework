@@ -58,6 +58,8 @@ class ClusterSupervisor:
         self.total_alerts_sent: int = 0
         self.last_check_time: float = 0.0
         self.inspection_passes: int = 0
+        self._alert_cooldowns: Dict[str, float] = {}
+        self._alert_min_interval_sec: float = 300.0
 
         self.running: bool = False
         self._stop_event = threading.Event()
@@ -168,6 +170,7 @@ class ClusterSupervisor:
                         )
                         if inst.connect():
                             self.reconnect_counts[inst_id] = 0
+                            self._alert_cooldowns.pop(f"集群实例掉线严重告警 [{inst_id}]", None)
                             self.total_healed_events += 1
                             reconnected_instances.append(inst_id)
                             logger.info(f"Supervisor: Reconnected instance [{inst_id}] successfully.")
@@ -301,11 +304,18 @@ class ClusterSupervisor:
         title: str,
         message: str,
         screenshot_bytes: Optional[bytes] = None,
-    ) -> None:
-        """Forward alert to configured Webhook channels."""
+    ) -> bool:
+        """Forward alert to configured Webhook channels with anti-storm cooldown."""
         if not self.config.enable_webhook_alerts or not self.notifier:
-            return
+            return False
 
+        min_interval = getattr(self, "_alert_min_interval_sec", 300.0)
+        now = time.time()
+        last_sent = self._alert_cooldowns.get(title, 0.0)
+        if (now - last_sent) < min_interval:
+            return False
+
+        self._alert_cooldowns[title] = now
         self.total_alerts_sent += 1
         try:
             if hasattr(self.notifier, "send_alert"):
@@ -321,8 +331,10 @@ class ClusterSupervisor:
                     message=message,
                     screenshot_bytes=screenshot_bytes,
                 )
+            return True
         except Exception as e:
             logger.warning(f"Failed to broadcast webhook alert: {e}")
+            return False
 
     def get_status(self) -> Dict[str, Any]:
         """Diagnostic state of the supervisor."""
