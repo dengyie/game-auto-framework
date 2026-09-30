@@ -4,6 +4,7 @@ Provides REST endpoints to start/stop pipelines, monitor progress, chain routine
 """
 
 from __future__ import annotations
+from collections import OrderedDict
 from contextlib import asynccontextmanager
 import csv
 import json
@@ -479,6 +480,42 @@ def image_media_type(frame_bytes: bytes) -> str:
     return "application/octet-stream"
 
 
+_TRANSCODE_CACHE_LOCK = threading.Lock()
+_TRANSCODE_CACHE: OrderedDict[int, bytes] = OrderedDict()
+_TRANSCODE_CACHE_MAX = 16
+
+
+def transcode_frame_to_jpeg(frame_bytes: bytes, max_dim: int = 1280, quality: int = 70) -> bytes:
+    """Transcode raw PNG frame bytes to downscaled JPEG with thread-safe LRU caching."""
+    if not frame_bytes or not frame_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+        return frame_bytes
+
+    frame_hash = hash(frame_bytes)
+    with _TRANSCODE_CACHE_LOCK:
+        if frame_hash in _TRANSCODE_CACHE:
+            _TRANSCODE_CACHE.move_to_end(frame_hash)
+            return _TRANSCODE_CACHE[frame_hash]
+
+    try:
+        mat = cv2.imdecode(np.frombuffer(frame_bytes, np.uint8), cv2.IMREAD_COLOR)
+        if mat is not None:
+            h, w = mat.shape[:2]
+            if w > max_dim or h > max_dim:
+                scale = float(max_dim) / max(w, h)
+                mat = cv2.resize(mat, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+            ok, jpg = cv2.imencode(".jpg", mat, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
+            if ok:
+                out_bytes = jpg.tobytes()
+                with _TRANSCODE_CACHE_LOCK:
+                    _TRANSCODE_CACHE[frame_hash] = out_bytes
+                    if len(_TRANSCODE_CACHE) > _TRANSCODE_CACHE_MAX:
+                        _TRANSCODE_CACHE.popitem(last=False)
+                return out_bytes
+    except Exception as e:
+        logger.debug(f"JPEG transcode error: {e}")
+    return frame_bytes
+
+
 @app.get("/api/v1/screenshot")
 @app.head("/api/v1/screenshot")
 def get_screenshot(instance_id: Optional[str] = None) -> Response:
@@ -508,19 +545,8 @@ def get_screenshot(instance_id: Optional[str] = None) -> Response:
             if not frame_bytes:
                 frame_bytes = _get_default_offline_frame()
 
-        if frame_bytes and frame_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
-            try:
-                mat = cv2.imdecode(np.frombuffer(frame_bytes, np.uint8), cv2.IMREAD_COLOR)
-                if mat is not None:
-                    h, w = mat.shape[:2]
-                    if w > 1280 or h > 1280:
-                        scale = 1280.0 / max(w, h)
-                        mat = cv2.resize(mat, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
-                    ok, jpg = cv2.imencode(".jpg", mat, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
-                    if ok:
-                        frame_bytes = jpg.tobytes()
-            except Exception as e:
-                logger.debug(f"JPEG transcode error in get_screenshot: {e}")
+        if frame_bytes:
+            frame_bytes = transcode_frame_to_jpeg(frame_bytes)
 
         return Response(
             content=frame_bytes,
@@ -569,19 +595,7 @@ def _generate_mjpeg_frames(instance_id: Optional[str] = None, fps: float = 10.0,
             frame_bytes = _get_default_offline_frame()
 
         if frame_bytes:
-            if frame_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
-                try:
-                    mat = cv2.imdecode(np.frombuffer(frame_bytes, np.uint8), cv2.IMREAD_COLOR)
-                    if mat is not None:
-                        h, w = mat.shape[:2]
-                        if w > 1280 or h > 1280:
-                            scale = 1280.0 / max(w, h)
-                            mat = cv2.resize(mat, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
-                        ok, jpg = cv2.imencode(".jpg", mat, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
-                        if ok:
-                            frame_bytes = jpg.tobytes()
-                except Exception as e:
-                    logger.debug(f"JPEG transcode error: {e}")
+            frame_bytes = transcode_frame_to_jpeg(frame_bytes)
 
             content_type = image_media_type(frame_bytes).encode("ascii")
             content_len = str(len(frame_bytes)).encode("ascii")
@@ -893,19 +907,8 @@ def get_instance_screenshot(instance_id: str) -> Response:
     if not data:
         data = _get_default_offline_frame()
 
-    if data and data.startswith(b"\x89PNG\r\n\x1a\n"):
-        try:
-            mat = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
-            if mat is not None:
-                h, w = mat.shape[:2]
-                if w > 1280 or h > 1280:
-                    scale = 1280.0 / max(w, h)
-                    mat = cv2.resize(mat, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
-                ok, jpg = cv2.imencode(".jpg", mat, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
-                if ok:
-                    data = jpg.tobytes()
-        except Exception as e:
-            logger.debug(f"JPEG transcode error in get_instance_screenshot: {e}")
+    if data:
+        data = transcode_frame_to_jpeg(data)
 
     media_type = image_media_type(data)
     return Response(

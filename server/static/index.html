@@ -1219,13 +1219,28 @@
           isFetching = true;
           const startT = performance.now();
           const nextImg = new Image();
+          let settled = false;
+          let reqTimeout = null;
           const onDone = () => {
+            if (settled) return;
+            settled = true;
+            if (reqTimeout) {
+              clearTimeout(reqTimeout);
+              reqTimeout = null;
+            }
             isFetching = false;
             if (isStreamActive && streamGeneration === currentGen) {
               const interval = Math.max(100, Math.round(1000 / streamFps));
               snapshotTimer = setTimeout(fetchSnap, interval);
             }
           };
+          reqTimeout = setTimeout(() => {
+            nextImg.onload = null;
+            nextImg.onerror = null;
+            nextImg.src = '';
+            updateStreamStatusBadge('RECONNECTING');
+            onDone();
+          }, 5000);
           nextImg.onload = () => {
             if (isStreamActive && streamGeneration === currentGen) {
               img.src = nextImg.src;

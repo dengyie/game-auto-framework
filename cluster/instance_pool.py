@@ -70,6 +70,8 @@ class DeviceInstance:
         self.last_tick_time: float = 0.0
         self.error_message: Optional[str] = None
         self.completed_cycles: int = 0
+        self._last_reconnect_time: float = 0.0
+        self._reconnect_cooldown_sec: float = 4.0
 
         self.stop_event = threading.Event()
         self.worker_thread: Optional[threading.Thread] = None
@@ -330,6 +332,12 @@ class DeviceInstance:
             connected = dev.is_connected() if dev else False
 
         if not dev or not connected:
+            now = time.time()
+            with self._state_lock:
+                if (now - self._last_reconnect_time) < self._reconnect_cooldown_sec:
+                    raise RuntimeError(f"Device for instance [{self.instance_id}] disconnected (cooldown active).")
+                self._last_reconnect_time = now
+
             if not self.connect():
                 raise RuntimeError(f"Device for instance [{self.instance_id}] failed to connect.")
             with self._state_lock:

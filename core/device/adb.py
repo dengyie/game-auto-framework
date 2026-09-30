@@ -157,6 +157,7 @@ class AdbDevice(BaseDevice):
         self._last_raw_bytes: Optional[bytes] = None
         self._last_baseline_bytes: Optional[bytes] = None
         self._cap_cache_ttl: float = 0.35
+        self._cap_timeout: float = 12.0
 
     def _update_scales(self) -> None:
         """Precalculate and cache coordinate scaling ratios to eliminate repeated division."""
@@ -199,16 +200,12 @@ class AdbDevice(BaseDevice):
                     stderr=subprocess.PIPE,
                     timeout=8,
                 )
-                output = res.stdout.decode("utf-8", errors="ignore")
-                if "connected" in output.lower() or "already connected" in output.lower():
-                    self._connected = True
-                    logger.info(f"ADB device [{self.serial}] successfully connected")
-                    self._probe_device_specs()
-                    return True
+                output = res.stdout.decode("utf-8", errors="ignore").strip()
+                logger.debug(f"adb connect output for [{self.serial}]: {output}")
             except Exception as e:
                 logger.warning(f"ADB connection attempt error for [{self.serial}]: {e}")
 
-        # Check if device is in adb devices list with 'device' state
+        # Check if device is in adb devices list with 'device' state (sole source of truth)
         try:
             res = subprocess.run(["adb", "devices"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5)
             out_str = res.stdout.decode("utf-8", errors="ignore")
@@ -287,7 +284,7 @@ class AdbDevice(BaseDevice):
 
         cmd = ["adb", "-s", self.serial, "exec-out", "screencap", "-p"]
         try:
-            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=4)
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=getattr(self, "_cap_timeout", 12.0))
             if res.returncode == 0 and len(res.stdout) > 0:
                 raw_bytes = res.stdout
                 if len(raw_bytes) >= 24 and raw_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
@@ -296,10 +293,16 @@ class AdbDevice(BaseDevice):
                         self.actual_resolution = (pw, ph)
                         self._update_scales()
 
-                self._last_raw_bytes = raw_bytes
-                self._last_baseline_bytes = None  # Invalidate baseline cache on new raw capture
-                self._last_cap_time = time.time()
-                return raw_bytes
+                    self._last_raw_bytes = raw_bytes
+                    self._last_baseline_bytes = None  # Invalidate baseline cache on new raw capture
+                    self._last_cap_time = time.time()
+                    return raw_bytes
+
+                err_text = raw_bytes.decode("utf-8", errors="ignore")
+                if "offline" in err_text.lower() or "not found" in err_text.lower() or "error" in err_text.lower():
+                    self._connected = False
+                raise RuntimeError(f"screencap produced invalid PNG header on [{self.serial}]: {err_text[:100]}")
+
             err_msg = res.stderr.decode("utf-8", errors="ignore")
             if "offline" in err_msg.lower() or "not found" in err_msg.lower():
                 self._connected = False
