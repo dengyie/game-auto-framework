@@ -3,43 +3,43 @@
   "total_requests": 4,
   "total_success": 4,
   "total_failed": 0,
-  "duration_sec": 5.57,
-  "qps": 0.72,
-  "overall_p50_ms": 8.08,
-  "overall_p95_ms": 5568.02,
-  "overall_p99_ms": 5568.02,
+  "duration_sec": 4.82,
+  "qps": 0.83,
+  "overall_p50_ms": 5.2,
+  "overall_p95_ms": 4813.75,
+  "overall_p99_ms": 4813.75,
   "endpoints": {
     "/health": {
       "total": 1,
       "success_rate_pct": 100.0,
-      "mean_ms": 1.54,
-      "p50_ms": 1.54,
-      "p95_ms": 1.54,
-      "p99_ms": 1.54
+      "mean_ms": 1.15,
+      "p50_ms": 1.15,
+      "p95_ms": 1.15,
+      "p99_ms": 1.15
     },
     "/api/v1/plugins": {
       "total": 1,
       "success_rate_pct": 100.0,
-      "mean_ms": 8.08,
-      "p50_ms": 8.08,
-      "p95_ms": 8.08,
-      "p99_ms": 8.08
+      "mean_ms": 5.2,
+      "p50_ms": 5.2,
+      "p95_ms": 5.2,
+      "p99_ms": 5.2
     },
     "/api/v1/status": {
       "total": 1,
       "success_rate_pct": 100.0,
-      "mean_ms": 0.59,
-      "p50_ms": 0.59,
-      "p95_ms": 0.59,
-      "p99_ms": 0.59
+      "mean_ms": 0.53,
+      "p50_ms": 0.53,
+      "p95_ms": 0.53,
+      "p99_ms": 0.53
     },
     "/api/v1/screenshot": {
       "total": 1,
       "success_rate_pct": 100.0,
-      "mean_ms": 5568.02,
-      "p50_ms": 5568.02,
-      "p95_ms": 5568.02,
-      "p99_ms": 5568.02
+      "mean_ms": 4813.75,
+      "p50_ms": 4813.75,
+      "p95_ms": 4813.75,
+      "p99_ms": 4813.75
     },
     "/dashboard": {
       "total": 0,
