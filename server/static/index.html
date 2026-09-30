@@ -198,24 +198,24 @@
       <div class="kpi-card">
         <div class="kpi-header">
           <span class="kpi-title"><span id="kpi-icon-inst"></span> 集群实例状态</span>
-          <span class="badge badge-cyan" id="kpi-inst-total">0 节点</span>
+          <span class="badge badge-cyan" id="kpi-inst-total">-- 节点</span>
         </div>
-        <div class="kpi-value" id="kpi-inst-active">0 <span style="font-size:0.9rem; font-weight:normal; color:var(--text-muted);">活跃中</span></div>
+        <div class="kpi-value" id="kpi-inst-active">-- <span style="font-size:0.9rem; font-weight:normal; color:var(--text-muted);">活跃中</span></div>
         <div class="kpi-sub">
-          <span>空闲: <strong id="kpi-inst-idle" style="color:var(--text-main);">0</strong></span>
-          <span>异常: <strong id="kpi-inst-err" style="color:var(--rose);">0</strong></span>
-          <span>总计轮次: <strong id="kpi-inst-cycles" style="color:var(--cyan);">0</strong></span>
+          <span>空闲: <strong id="kpi-inst-idle" style="color:var(--text-main);">--</strong></span>
+          <span>异常: <strong id="kpi-inst-err" style="color:var(--rose);">--</strong></span>
+          <span>总计轮次: <strong id="kpi-inst-cycles" style="color:var(--cyan);">--</strong></span>
         </div>
       </div>
 
       <div class="kpi-card">
         <div class="kpi-header">
           <span class="kpi-title"><span id="kpi-icon-proxy"></span> 独享代理池负载</span>
-          <span class="badge badge-green" id="kpi-proxy-quota">防风控安全</span>
+          <span class="badge badge-green" id="kpi-proxy-quota">--</span>
         </div>
-        <div class="kpi-value" id="kpi-proxy-active">0 <span style="font-size:0.9rem; font-weight:normal; color:var(--text-muted);">活跃代理</span></div>
+        <div class="kpi-value" id="kpi-proxy-active">-- <span style="font-size:0.9rem; font-weight:normal; color:var(--text-muted);">活跃代理</span></div>
         <div class="kpi-sub">
-          <span>总承载绑定: <strong id="kpi-proxy-util" style="color:var(--text-main);">0 / 0</strong></span>
+          <span>总承载绑定: <strong id="kpi-proxy-util" style="color:var(--text-main);">-- / --</strong></span>
           <span>策略: <strong style="color:var(--cyan);">单 IP ≤ 5 实例</strong></span>
         </div>
       </div>
@@ -223,24 +223,24 @@
       <div class="kpi-card">
         <div class="kpi-header">
           <span class="kpi-title"><span id="kpi-icon-acc"></span> 账号与金币资产</span>
-          <span class="badge badge-amber" id="kpi-acc-total">0 账号</span>
+          <span class="badge badge-amber" id="kpi-acc-total">-- 账号</span>
         </div>
-        <div class="kpi-value" id="kpi-gold-total">0 <span style="font-size:0.9rem; font-weight:normal; color:var(--amber);">金币</span></div>
+        <div class="kpi-value" id="kpi-gold-total">-- <span style="font-size:0.9rem; font-weight:normal; color:var(--amber);">金币</span></div>
         <div class="kpi-sub">
-          <span>银币: <strong id="kpi-silver-total">0</strong></span>
-          <span>在线: <strong id="kpi-acc-online" style="color:var(--emerald);">0</strong></span>
-          <span>疲劳作息: <strong id="kpi-acc-resting" style="color:var(--text-muted);">0</strong></span>
+          <span>银币: <strong id="kpi-silver-total">--</strong></span>
+          <span>在线: <strong id="kpi-acc-online" style="color:var(--emerald);">--</strong></span>
+          <span>疲劳作息: <strong id="kpi-acc-resting" style="color:var(--text-muted);">--</strong></span>
         </div>
       </div>
 
       <div class="kpi-card">
         <div class="kpi-header">
           <span class="kpi-title"><span id="kpi-icon-sup"></span> 自愈监控巡检</span>
-          <span class="badge badge-green" id="kpi-sup-status">ACTIVE</span>
+          <span class="badge badge-green" id="kpi-sup-status">--</span>
         </div>
-        <div class="kpi-value" id="kpi-sup-passes">0 <span style="font-size:0.9rem; font-weight:normal; color:var(--text-muted);">次巡检</span></div>
+        <div class="kpi-value" id="kpi-sup-passes">-- <span style="font-size:0.9rem; font-weight:normal; color:var(--text-muted);">状态</span></div>
         <div class="kpi-sub">
-          <span>故障自动恢复: <strong id="kpi-sup-recovered" style="color:var(--emerald);">0</strong></span>
+          <span>故障自动恢复: <strong id="kpi-sup-recovered" style="color:var(--emerald);">--</strong></span>
           <span>最后心跳: <strong id="kpi-sup-hb" style="color:var(--text-muted);">--</strong></span>
         </div>
       </div>
@@ -249,19 +249,19 @@
     <!-- Navigation Tabs -->
     <div class="tab-nav">
       <button class="tab-btn active" onclick="switchTab('instances')">
-        <span id="tab-icon-instances"></span> 集群实例矩阵 (<span id="tab-cnt-inst">5</span>)
+        <span id="tab-icon-instances"></span> 集群实例矩阵 (<span id="tab-cnt-inst">--</span>)
       </button>
       <button class="tab-btn" onclick="switchTab('stream')">
         <span id="tab-icon-stream"></span> 设备监控画面 (Live Stream)
       </button>
       <button class="tab-btn" onclick="switchTab('teams')">
-        <span id="tab-icon-teams"></span> 5人协作队伍 (<span id="tab-cnt-teams">1</span>)
+        <span id="tab-icon-teams"></span> 5人协作队伍 (<span id="tab-cnt-teams">--</span>)
       </button>
       <button class="tab-btn" onclick="switchTab('proxies')">
-        <span id="tab-icon-proxies"></span> 独享代理池 (<span id="tab-cnt-proxies">2</span>)
+        <span id="tab-icon-proxies"></span> 独享代理池 (<span id="tab-cnt-proxies">--</span>)
       </button>
       <button class="tab-btn" onclick="switchTab('accounts')">
-        <span id="tab-icon-accounts"></span> 游戏账号与作息 (<span id="tab-cnt-accounts">5</span>)
+        <span id="tab-icon-accounts"></span> 游戏账号与作息 (<span id="tab-cnt-accounts">--</span>)
       </button>
       <button class="tab-btn" onclick="switchTab('soak')">
         <span id="tab-icon-soak"></span> 24h极限压测与遥测
@@ -1607,33 +1607,48 @@
         }
 
         // Instances KPI
-        document.getElementById('kpi-inst-total').innerText = `${d.cluster.total_instances} 节点`;
-        document.getElementById('kpi-inst-active').innerHTML = `${d.cluster.busy_instances} <span style="font-size:0.9rem; font-weight:normal; color:var(--text-muted);">活跃中</span>`;
-        document.getElementById('kpi-inst-idle').innerText = d.cluster.idle_instances;
-        document.getElementById('kpi-inst-err').innerText = d.cluster.error_instances;
-        document.getElementById('kpi-inst-cycles').innerText = d.cluster.total_completed_cycles;
+        document.getElementById('kpi-inst-total').innerText = `${d.cluster.total_instances ?? 0} 节点`;
+        document.getElementById('kpi-inst-active').innerHTML = `${d.cluster.busy_instances ?? 0} <span style="font-size:0.9rem; font-weight:normal; color:var(--text-muted);">活跃中</span>`;
+        document.getElementById('kpi-inst-idle').innerText = d.cluster.idle_instances ?? 0;
+        document.getElementById('kpi-inst-err').innerText = d.cluster.error_instances ?? 0;
+        const cyclesVal = d.cluster.total_completed_cycles ?? (cachedInstances ? cachedInstances.reduce((acc, i) => acc + (i.completed_cycles || 0), 0) : 0);
+        document.getElementById('kpi-inst-cycles').innerText = `${cyclesVal} 轮`;
 
         // Proxy KPI
-        const pTotal = d.proxy.total_proxies;
-        const pActive = d.proxy.active_proxies;
+        const pTotal = d.proxy.total_proxies ?? 0;
+        const pActive = d.proxy.active_proxies ?? 0;
+        const usedSlots = d.proxy.used_slots ?? d.proxy.total_bindings ?? 0;
+        const totalSlots = d.proxy.total_slots ?? d.proxy.total_capacity ?? 0;
         document.getElementById('kpi-proxy-active').innerHTML = `${pActive} <span style="font-size:0.9rem; font-weight:normal; color:var(--text-muted);">活跃代理</span>`;
-        document.getElementById('kpi-proxy-util').innerText = `${d.proxy.total_bindings} / ${d.proxy.total_capacity}`;
-        document.getElementById('kpi-proxy-quota').className = d.proxy.violations === 0 ? 'badge badge-green' : 'badge badge-red';
-        document.getElementById('kpi-proxy-quota').innerText = d.proxy.violations === 0 ? '防风控安全' : '超配告警';
+        document.getElementById('kpi-proxy-util').innerText = `${usedSlots} / ${totalSlots}`;
+        const isViolated = (d.proxy.violations !== undefined && d.proxy.violations !== null) ? (d.proxy.violations > 0) : (usedSlots > totalSlots);
+        document.getElementById('kpi-proxy-quota').className = !isViolated ? 'badge badge-green' : 'badge badge-red';
+        document.getElementById('kpi-proxy-quota').innerText = !isViolated ? '防风控安全' : '超配告警';
 
         // Assets KPI
-        document.getElementById('kpi-acc-total').innerText = `${d.assets.total_accounts} 账号`;
-        document.getElementById('kpi-gold-total').innerHTML = `${d.assets.total_gold.toLocaleString()} <span style="font-size:0.9rem; font-weight:normal; color:var(--amber);">金币</span>`;
-        document.getElementById('kpi-silver-total').innerText = d.assets.total_silver.toLocaleString();
-        document.getElementById('kpi-acc-online').innerText = d.assets.online_accounts;
-        document.getElementById('kpi-acc-resting').innerText = d.assets.resting_accounts;
+        document.getElementById('kpi-acc-total').innerText = `${d.assets.total_accounts ?? 0} 账号`;
+        document.getElementById('kpi-gold-total').innerHTML = `${(d.assets.total_gold ?? d.assets.total_gold_coins ?? 0).toLocaleString()} <span style="font-size:0.9rem; font-weight:normal; color:var(--amber);">金币</span>`;
+        document.getElementById('kpi-silver-total').innerText = (d.assets.total_silver ?? d.assets.total_silver_coins ?? 0).toLocaleString();
+        document.getElementById('kpi-acc-online').innerText = d.assets.online_accounts ?? d.assets.in_use_accounts ?? 0;
+        document.getElementById('kpi-acc-resting').innerText = d.assets.resting_accounts ?? 0;
 
         // Supervisor KPI
         document.getElementById('kpi-sup-status').innerText = d.supervisor.running ? 'ACTIVE' : 'IDLE';
         document.getElementById('kpi-sup-status').className = d.supervisor.running ? 'badge badge-green' : 'badge badge-slate';
-        document.getElementById('kpi-sup-passes').innerHTML = `${d.supervisor.inspection_passes} <span style="font-size:0.9rem; font-weight:normal; color:var(--text-muted);">次巡检</span>`;
-        document.getElementById('kpi-sup-recovered').innerText = d.supervisor.total_auto_recovered;
-        document.getElementById('kpi-sup-hb').innerText = d.supervisor.last_inspection_time ? new Date(d.supervisor.last_inspection_time * 1000).toTimeString().split(' ')[0] : '--';
+        const passCount = d.supervisor.inspection_passes;
+        if (passCount !== undefined && passCount !== null) {
+          document.getElementById('kpi-sup-passes').innerHTML = `${passCount} <span style="font-size:0.9rem; font-weight:normal; color:var(--text-muted);">次巡检</span>`;
+        } else {
+          document.getElementById('kpi-sup-passes').innerHTML = `${d.supervisor.running ? '正常巡检' : '已暂停'} <span style="font-size:0.9rem; font-weight:normal; color:var(--text-muted);">状态</span>`;
+        }
+        document.getElementById('kpi-sup-recovered').innerText = d.supervisor.total_auto_recovered ?? d.supervisor.total_healed_events ?? 0;
+        if (d.supervisor.last_check_ago_sec !== undefined && d.supervisor.last_check_ago_sec >= 0) {
+          document.getElementById('kpi-sup-hb').innerText = `${Math.round(d.supervisor.last_check_ago_sec)}秒前`;
+        } else if (d.supervisor.last_inspection_time) {
+          document.getElementById('kpi-sup-hb').innerText = new Date(d.supervisor.last_inspection_time * 1000).toTimeString().split(' ')[0];
+        } else {
+          document.getElementById('kpi-sup-hb').innerText = '--';
+        }
       } catch (err) {
         console.error("Cluster status error:", err);
         const ind = document.getElementById('sys-status-indicator');
@@ -1677,7 +1692,7 @@
           const safeName = escapeHtml(inst.name);
           const safeAcc = escapeHtml(inst.assigned_account_id || '未绑定');
           const safeProxy = escapeHtml(inst.assigned_proxy_id || '直接直连');
-          const safePipe = escapeHtml(inst.pipeline_name || '无任务');
+          const safePipe = escapeHtml(inst.active_pipeline || inst.pipeline_name || '无任务');
           const safeTeam = inst.team_id ? `${escapeHtml(inst.team_id)} (${escapeHtml(inst.team_role || 'member')})` : '独立单开';
           const isBusy = inst.status === 'busy';
           const isIdle = inst.status === 'idle';
@@ -1733,25 +1748,30 @@
       try {
         const res = await fetch('/api/v1/cluster/teams');
         const data = await res.json();
-        document.getElementById('tab-cnt-teams').innerText = data.total;
+        const teamsList = data.teams || [];
+        document.getElementById('tab-cnt-teams').innerText = data.total ?? teamsList.length;
         const body = document.getElementById('teams-table-body');
-        if (!data.teams || data.teams.length === 0) {
+        if (!teamsList || teamsList.length === 0) {
           body.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:20px;">暂无组建队伍</td></tr>`;
           return;
         }
-        body.innerHTML = data.teams.map(t => {
+        body.innerHTML = teamsList.map(t => {
           const safeTeamId = escapeHtml(t.team_id);
-          const safeLeader = escapeHtml(t.leader_id);
-          const membersHtml = (t.member_ids || []).map(m => `<span class="badge badge-cyan" style="margin-right:4px;">${escapeHtml(m)}</span>`).join('');
-          const safeActivity = escapeHtml(t.target_activity);
-          const count = (t.member_ids || []).length + 1;
+          const safeLeader = escapeHtml(t.leader_instance_id || t.leader_id || '--');
+          const memberList = t.member_instance_ids || t.member_ids || [];
+          const membersHtml = memberList.length > 0
+            ? memberList.map(m => `<span class="badge badge-cyan" style="margin-right:4px;">${escapeHtml(m)}</span>`).join('')
+            : '<span style="color:var(--text-muted); font-size:0.8rem;">无队员</span>';
+          const safeActivity = escapeHtml(t.target_activity || 'team_zhuogui');
+          const count = t.total_count ?? (memberList.length + 1);
+          const isFull = t.is_full ?? (count >= 5);
           return `
           <tr>
             <td style="font-weight:700; color:#fff;">${safeTeamId}</td>
             <td><span class="badge badge-amber">Leader: ${safeLeader}</span></td>
             <td>${membersHtml}</td>
             <td>${safeActivity}</td>
-            <td><span class="badge badge-green">${count} / 5 人满编</span></td>
+            <td><span class="badge ${isFull ? 'badge-green' : 'badge-cyan'}">${count} / 5 人${isFull ? '满编' : '组队中'}</span></td>
             <td><button class="danger" onclick="dissolveTeam('${safeTeamId}')">解散队伍</button></td>
           </tr>
         `}).join('');
@@ -1764,21 +1784,23 @@
       try {
         const res = await fetch('/api/v1/cluster/proxies');
         const data = await res.json();
-        document.getElementById('tab-cnt-proxies').innerText = data.total;
+        const proxyList = data.proxies || [];
+        document.getElementById('tab-cnt-proxies').innerText = data.total ?? (data.stats ? data.stats.total_proxies : proxyList.length);
         const body = document.getElementById('proxies-table-body');
-        if (!data.proxies || data.proxies.length === 0) {
+        if (!proxyList || proxyList.length === 0) {
           body.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:20px;">暂无代理节点</td></tr>`;
           return;
         }
-        body.innerHTML = data.proxies.map(p => {
+        body.innerHTML = proxyList.map(p => {
           const safeProxyId = escapeHtml(p.proxy_id);
           const safeHost = escapeHtml(p.host);
           const safePort = escapeHtml(p.port);
           const safeProto = escapeHtml((p.protocol || 'http').toUpperCase());
-          const boundCount = Number(p.bound_count) || 0;
-          const maxInst = Number(p.max_instances) || 5;
+          const boundCount = Number(p.active_count ?? p.bound_count) || 0;
+          const maxInst = Number(p.max_instances) || 1;
           const pct = Math.min(100, Math.round((boundCount / maxInst) * 100));
-          const boundInsts = (p.bound_instances || []).map(escapeHtml).join(', ') || '无';
+          const instList = p.active_instance_ids || p.bound_instances || [];
+          const boundInsts = instList.length > 0 ? instList.map(escapeHtml).join(', ') : '无';
           return `
           <tr>
             <td style="font-weight:700; color:#fff;">${safeProxyId} ${p.label ? `<span style="font-size:0.75rem; color:var(--cyan); margin-left:4px;">${escapeHtml(p.label)}</span>` : ''}</td>
@@ -1804,39 +1826,47 @@
       try {
         const res = await fetch('/api/v1/cluster/accounts');
         const data = await res.json();
-        document.getElementById('tab-cnt-accounts').innerText = data.total;
+        const accList = data.accounts || [];
+        document.getElementById('tab-cnt-accounts').innerText = data.total ?? (data.assets ? data.assets.total_accounts : accList.length);
         const body = document.getElementById('accounts-table-body');
-        if (!data.accounts || data.accounts.length === 0) {
+        if (!accList || accList.length === 0) {
           body.innerHTML = `<tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:20px;">暂无账号数据</td></tr>`;
           return;
         }
-        body.innerHTML = data.accounts.map(acc => {
+        body.innerHTML = accList.map(acc => {
           const safeAccId = escapeHtml(acc.account_id);
           const safeName = escapeHtml(acc.role_name || acc.username || acc.account_id);
           const safeSect = escapeHtml(acc.sect || '未拜门派');
           const safeServer = escapeHtml(acc.server_name || '双线区');
-          const onlineMins = Math.round(Number(acc.consecutive_online_minutes) || 0);
+          const onlineHours = Number(acc.accumulated_online_hours ?? (acc.consecutive_online_minutes ? acc.consecutive_online_minutes / 60 : 0)) || 0;
+          const onlineMins = Math.round(onlineHours * 60);
           const fatigueMins = Math.round(Number(acc.fatigue_threshold_minutes) || 360);
-          const isOnline = acc.status === 'online';
-          const goldStr = Number(acc.gold || 0).toLocaleString();
-          const silverStr = Number(acc.silver || 0).toLocaleString();
+          const isOnline = acc.status === 'in_use' || acc.status === 'online';
+          const isIdle = acc.status === 'idle';
+          const isResting = acc.status === 'resting';
+          const statusBadge = isOnline
+            ? '<span class="badge badge-green">IN_USE</span>'
+            : (isIdle ? '<span class="badge badge-cyan">IDLE</span>' : '<span class="badge badge-slate">RESTING</span>');
+          const goldStr = Number(acc.gold_coins ?? acc.gold ?? 0).toLocaleString();
+          const silverStr = Number(acc.silver_coins ?? acc.silver ?? 0).toLocaleString();
           return `
           <tr>
             <td style="font-weight:700; color:#fff;">${safeAccId}</td>
             <td>${safeName} (${safeSect})</td>
             <td>${safeServer}</td>
             <td>${onlineMins}m / ${fatigueMins}m</td>
-            <td><span class="badge ${isOnline ? 'badge-green' : 'badge-slate'}">${isOnline ? 'ONLINE' : 'RESTING'}</span></td>
+            <td>${statusBadge}</td>
             <td style="color:var(--amber); font-weight:600;">${goldStr}</td>
             <td style="color:#cbd5e1;">${silverStr}</td>
             <td>
-              ${isOnline ? `<button onclick="forceRestAccount('${safeAccId}')">强制休眠</button>` : `<span style="color:var(--text-muted); font-size:0.8rem;">作息中</span>`}
+              ${isOnline ? `<button onclick="forceRestAccount('${safeAccId}')">强制休眠</button>` : `<span style="color:var(--text-muted); font-size:0.8rem;">${isIdle ? '空闲待命' : '作息中'}</span>`}
             </td>
           </tr>
         `}).join('');
       } catch (err) {
         console.error(err);
       }
+    }
     }
 
     async function refreshSoakStatus() {

@@ -1004,9 +1004,11 @@ def register_proxy(req: RegisterProxyRequest) -> Dict[str, Any]:
 @app.get("/api/v1/cluster/proxies")
 def list_proxies() -> Dict[str, Any]:
     """List all registered proxies and quota usage."""
+    proxies = [p.to_dict() for p in PROXY_MANAGER.list_proxies()]
     return {
+        "total": len(proxies),
         "stats": PROXY_MANAGER.get_proxy_stats(),
-        "proxies": [p.to_dict() for p in PROXY_MANAGER.list_proxies()],
+        "proxies": proxies,
     }
 
 
@@ -1064,9 +1066,11 @@ def register_account(req: RegisterAccountRequest) -> Dict[str, Any]:
 @app.get("/api/v1/cluster/accounts")
 def list_accounts() -> Dict[str, Any]:
     """List accounts and aggregated gold/silver asset earnings."""
+    accounts = ACCOUNT_MATRIX.export_to_dict()
     return {
+        "total": len(accounts),
         "assets": ACCOUNT_MATRIX.get_total_assets(),
-        "accounts": ACCOUNT_MATRIX.export_to_dict(),
+        "accounts": accounts,
     }
 
 

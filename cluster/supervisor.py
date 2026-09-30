@@ -57,6 +57,7 @@ class ClusterSupervisor:
         self.total_healed_events: int = 0
         self.total_alerts_sent: int = 0
         self.last_check_time: float = 0.0
+        self.inspection_passes: int = 0
 
         self.running: bool = False
         self._stop_event = threading.Event()
@@ -146,6 +147,7 @@ class ClusterSupervisor:
         """
         with self._lock:
             self.last_check_time = time.time()
+            self.inspection_passes += 1
             now = time.time()
             stalled_instances: List[str] = []
             reconnected_instances: List[str] = []
@@ -330,7 +332,10 @@ class ClusterSupervisor:
                 "check_interval_sec": self.config.check_interval_sec,
                 "stall_threshold_sec": self.config.stall_threshold_sec,
                 "last_check_ago_sec": round(time.time() - self.last_check_time, 2) if self.last_check_time > 0 else -1,
+                "last_inspection_time": self.last_check_time if self.last_check_time > 0 else None,
+                "inspection_passes": self.inspection_passes,
                 "total_healed_events": self.total_healed_events,
+                "total_auto_recovered": self.total_healed_events,
                 "total_alerts_sent": self.total_alerts_sent,
                 "reconnect_counts": dict(self.reconnect_counts),
                 "app_restart_counts": dict(self.app_restart_counts),

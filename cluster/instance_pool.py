@@ -703,4 +703,5 @@ class InstancePool:
                 "error_instances": error,
                 "disconnected_instances": disconnected,
                 "total_teams": len(self._teams),
+                "total_completed_cycles": sum(i.completed_cycles for i in self._instances.values()),
             }

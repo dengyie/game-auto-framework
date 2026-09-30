@@ -76,6 +76,8 @@ class ProxyConfig(BaseModel):
             "max_instances": self.max_instances,
             "active_count": len(self.active_instance_ids),
             "active_instance_ids": list(self.active_instance_ids),
+            "bound_count": len(self.active_instance_ids),
+            "bound_instances": list(self.active_instance_ids),
             "available_slots": self.available_slots,
             "status": self.status.value,
             "latency_ms": round(self.latency_ms, 2),
@@ -287,6 +289,9 @@ class ProxyManager:
                 "used_slots": used_slots,
                 "free_slots": free_slots,
                 "bound_instances_count": len(self._instance_to_proxy),
+                "total_bindings": used_slots,
+                "total_capacity": total_slots,
+                "violations": 0,
             }
 
     # Backward compatibility alias

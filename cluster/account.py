@@ -133,9 +133,12 @@ class AccountConfig(BaseModel):
             "status": self.status.value,
             "gold_coins": self.gold_coins,
             "silver_coins": self.silver_coins,
+            "gold": self.gold_coins,
+            "silver": self.silver_coins,
             "vitality": self.vitality,
             "daily_active_points": self.daily_active_points,
             "accumulated_online_hours": round(self.accumulated_online_seconds / 3600.0, 2),
+            "consecutive_online_minutes": round(self.accumulated_online_seconds / 60.0, 1),
             "resting_remaining_sec": max(0, int(self.resting_until - time.time())) if self.status == AccountStatus.RESTING else 0,
             "bound_instance_id": self.bound_instance_id,
             "bound_proxy_id": self.bound_proxy_id,
@@ -315,11 +318,16 @@ class AccountMatrix:
             total_vitality = sum(a.vitality for a in self._accounts.values())
             total_active = sum(a.daily_active_points for a in self._accounts.values())
 
+            in_use = sum(1 for a in self._accounts.values() if a.status == AccountStatus.IN_USE)
+            idle = sum(1 for a in self._accounts.values() if a.status == AccountStatus.IDLE)
+            resting = sum(1 for a in self._accounts.values() if a.status == AccountStatus.RESTING)
+
             return {
                 "total_accounts": len(self._accounts),
-                "in_use_accounts": sum(1 for a in self._accounts.values() if a.status == AccountStatus.IN_USE),
-                "idle_accounts": sum(1 for a in self._accounts.values() if a.status == AccountStatus.IDLE),
-                "resting_accounts": sum(1 for a in self._accounts.values() if a.status == AccountStatus.RESTING),
+                "in_use_accounts": in_use,
+                "online_accounts": in_use,
+                "idle_accounts": idle,
+                "resting_accounts": resting,
                 "total_gold": total_gold,
                 "total_silver": total_silver,
                 "total_gold_coins": total_gold,
