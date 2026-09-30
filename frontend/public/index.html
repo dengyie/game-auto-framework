@@ -176,7 +176,7 @@
       </div>
     </div>
     <div class="header-controls">
-      <status-indicator id="sys-status-indicator" status="online" label="VPS Connected" ping-ms="18"></status-indicator>
+      <status-indicator id="sys-status-indicator" status="online" label="VPS Connected" ping-ms="--"></status-indicator>
       <div style="display:flex; align-items:center; gap:6px; font-size:0.85rem; color:var(--text-muted); font-mono;">
         <span class="pulse-dot"></span>
         <span id="sys-clock">--:--:--</span>
@@ -298,7 +298,6 @@
             <select id="stream-instance-select" onchange="onStreamInstanceChange()" style="padding:6px 12px; font-weight:600;">
               <option value="inst_01">实例 1: inst_01 (云手机)</option>
               <option value="inst_02">实例 2: inst_02 (Windows MuMu)</option>
-              <option value="global">主任务执行器 (Global Device)</option>
             </select>
           </div>
 
@@ -323,14 +322,14 @@
           <div class="video-stage" id="video-stage-container">
             <!-- Badges Overlay -->
             <div class="stream-overlay">
-              <div class="stream-badge"><span class="pulse-dot"></span> <span id="stream-active-inst-label">inst_01 (LIVE)</span></div>
-              <div class="stream-badge" id="stream-pipeline-badge">流水线: daily_shimen</div>
+              <div class="stream-badge"><span class="pulse-dot" id="stream-status-dot"></span> <span id="stream-active-inst-label">-- (连接中...)</span></div>
+              <div class="stream-badge" id="stream-pipeline-badge">流水线: --</div>
             </div>
 
             <div class="stream-stats-overlay">
               <div class="stream-badge" id="stream-fps-badge">10 FPS</div>
-              <div class="stream-badge" id="stream-latency-badge">延迟: 18ms</div>
-              <div class="stream-badge">1280x720</div>
+              <div class="stream-badge" id="stream-latency-badge">延迟: -- ms</div>
+              <div class="stream-badge" id="stream-resolution-badge">1280x720</div>
             </div>
 
             <!-- Main Video / Image Stream Container -->
@@ -1117,6 +1116,9 @@
     function onStreamInstanceChange() {
       streamInstance = document.getElementById('stream-instance-select').value;
       updateStreamStatusBadge('SELECTED');
+      updateStreamTelemetry(streamInstance);
+      const latEl = document.getElementById('stream-latency-badge');
+      if (latEl) latEl.innerText = '延迟: 测速中...';
       activateLiveStream();
     }
     window.onStreamInstanceChange = onStreamInstanceChange;
@@ -1137,13 +1139,9 @@
     function getStreamUrl() {
       const t = Date.now();
       if (streamProtocol === 'mjpeg') {
-        return streamInstance === 'global'
-          ? `/api/v1/stream?fps=${streamFps}&t=${t}`
-          : `/api/v1/stream?instance_id=${streamInstance}&fps=${streamFps}&t=${t}`;
+        return `/api/v1/stream?instance_id=${encodeURIComponent(streamInstance)}&fps=${streamFps}&t=${t}`;
       } else {
-        return streamInstance === 'global'
-          ? `/api/v1/screenshot?t=${t}`
-          : `/api/v1/cluster/instances/${streamInstance}/screenshot?t=${t}`;
+        return `/api/v1/cluster/instances/${encodeURIComponent(streamInstance)}/screenshot?t=${t}`;
       }
     }
 
@@ -1184,7 +1182,11 @@
           updateStreamStatusBadge('LIVE');
           const latency = Math.round(performance.now() - startT);
           const latEl = document.getElementById('stream-latency-badge');
-          if (latEl) latEl.innerText = `延迟: ${Math.min(latency, 250)}ms`;
+          if (latEl) latEl.innerText = `延迟: ${latency}ms`;
+          const resBadge = document.getElementById('stream-resolution-badge');
+          if (resBadge && img.naturalWidth && img.naturalHeight) {
+            resBadge.innerText = `${img.naturalWidth}x${img.naturalHeight}`;
+          }
         };
 
         img.onerror = () => {
@@ -1229,7 +1231,11 @@
               img.src = nextImg.src;
               const latency = Math.round(performance.now() - startT);
               const latEl = document.getElementById('stream-latency-badge');
-              if (latEl) latEl.innerText = `延迟: ${Math.min(latency, 250)}ms`;
+              if (latEl) latEl.innerText = `延迟: ${latency}ms`;
+              const resBadge = document.getElementById('stream-resolution-badge');
+              if (resBadge && nextImg.naturalWidth && nextImg.naturalHeight) {
+                resBadge.innerText = `${nextImg.naturalWidth}x${nextImg.naturalHeight}`;
+              }
             }
             onDone();
           };
@@ -1254,7 +1260,7 @@
     }
 
     function takeLiveSnapshot() {
-      const snapUrl = streamInstance === 'global' ? `/api/v1/screenshot?t=${Date.now()}` : `/api/v1/cluster/instances/${streamInstance}/screenshot?t=${Date.now()}`;
+      const snapUrl = `/api/v1/cluster/instances/${encodeURIComponent(streamInstance)}/screenshot?t=${Date.now()}`;
       const a = document.createElement('a');
       a.href = snapUrl;
       a.download = `screenshot_${streamInstance}_${Date.now()}.jpg`;
@@ -1332,7 +1338,7 @@
       setTimeout(() => ripple.remove(), 400);
 
       try {
-        const targetInst = streamInstance === 'global' ? 'inst_01' : streamInstance;
+        const targetInst = streamInstance;
         const res = await fetch(`/api/v1/cluster/instances/${targetInst}/action`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1348,7 +1354,7 @@
     window.handleVideoClick = handleVideoClick;
 
     async function sendDeviceKey(keycode) {
-      const targetInst = streamInstance === 'global' ? 'inst_01' : streamInstance;
+      const targetInst = streamInstance;
       try {
         const res = await fetch(`/api/v1/cluster/instances/${targetInst}/action`, {
           method: 'POST',
@@ -1366,7 +1372,7 @@
 
     async function sendDeviceText(text) {
       if (!text) return false;
-      const targetInst = streamInstance === 'global' ? 'inst_01' : streamInstance;
+      const targetInst = streamInstance;
       try {
         const res = await fetch(`/api/v1/cluster/instances/${targetInst}/action`, {
           method: 'POST',
@@ -1469,7 +1475,7 @@
     });
 
     async function sendDeviceSwipe(dir) {
-      const targetInst = streamInstance === 'global' ? 'inst_01' : streamInstance;
+      const targetInst = streamInstance;
       let x1 = 640, y1 = 360, x2 = 640, y2 = 360;
       if (dir === 'up') { y1 = 540; y2 = 180; }
       else if (dir === 'down') { y1 = 180; y2 = 540; }
@@ -1523,10 +1529,44 @@
 
     function focusInstanceCinema(instId) {
       streamInstance = instId;
-      document.getElementById('stream-instance-select').value = instId;
+      const selectEl = document.getElementById('stream-instance-select');
+      if (selectEl) selectEl.value = instId;
+      updateStreamTelemetry(instId);
+      const latEl = document.getElementById('stream-latency-badge');
+      if (latEl) latEl.innerText = '延迟: 测速中...';
       setStreamViewMode('cinema');
     }
     window.focusInstanceCinema = focusInstanceCinema;
+
+    let cachedInstances = [];
+
+    function updateStreamTelemetry(instId) {
+      const targetId = instId || streamInstance;
+      const inst = (cachedInstances || []).find(i => i.instance_id === targetId);
+      const pipeEl = document.getElementById('stream-pipeline-badge');
+      const dotEl = document.getElementById('stream-status-dot');
+
+      if (inst) {
+        const pipeName = inst.active_pipeline || inst.pipeline_name;
+        const isBusy = inst.status === 'busy';
+        const isConnected = inst.is_connected !== false;
+
+        if (pipeEl) {
+          if (isBusy && pipeName) {
+            pipeEl.innerHTML = `流水线: <span style="color:var(--emerald); font-weight:700;">${escapeHtml(pipeName)} (运行中)</span>`;
+          } else if (pipeName) {
+            pipeEl.innerText = `预设: ${pipeName} (就绪)`;
+          } else {
+            pipeEl.innerText = `流水线: 空闲 (就绪)`;
+          }
+        }
+        if (dotEl) {
+          dotEl.style.background = isBusy ? 'var(--emerald)' : (isConnected ? 'var(--emerald)' : 'var(--rose)');
+        }
+      } else {
+        if (pipeEl) pipeEl.innerText = `流水线: 未运行`;
+      }
+    }
 
     // Core Data Refreshers with Concurrency Guard & AllSettled Isolation
     async function refreshAll() {
@@ -1554,9 +1594,17 @@
 
     async function refreshClusterStatus() {
       try {
+        const startT = performance.now();
         const res = await fetch('/api/v1/cluster/status');
+        const pingMs = Math.round(performance.now() - startT);
         const d = await res.json();
         document.getElementById('vps-platform').innerText = `Engine: OK`;
+        const ind = document.getElementById('sys-status-indicator');
+        if (ind) {
+          ind.setAttribute('status', 'online');
+          ind.setAttribute('label', 'VPS Connected');
+          ind.setAttribute('ping-ms', pingMs);
+        }
 
         // Instances KPI
         document.getElementById('kpi-inst-total').innerText = `${d.cluster.total_instances} 节点`;
@@ -1588,6 +1636,12 @@
         document.getElementById('kpi-sup-hb').innerText = d.supervisor.last_inspection_time ? new Date(d.supervisor.last_inspection_time * 1000).toTimeString().split(' ')[0] : '--';
       } catch (err) {
         console.error("Cluster status error:", err);
+        const ind = document.getElementById('sys-status-indicator');
+        if (ind) {
+          ind.setAttribute('status', 'error');
+          ind.setAttribute('label', 'VPS Disconnected');
+          ind.removeAttribute('ping-ms');
+        }
       }
     }
 
@@ -1595,6 +1649,7 @@
       try {
         const res = await fetch('/api/v1/cluster/instances');
         const instances = await res.json();
+        cachedInstances = instances;
         document.getElementById('tab-cnt-inst').innerText = instances.length;
 
         // Synchronize stream instance select options with active cluster instances
@@ -1606,15 +1661,15 @@
             const safeName = escapeHtml(inst.name);
             return `<option value="${safeId}">${safeId} (${safeName})</option>`;
           });
-          optionsHtml.push('<option value="global">主任务执行器 (Global Device)</option>');
           streamSelect.innerHTML = optionsHtml.join('');
-          if (instances.some(i => i.instance_id === currentVal) || currentVal === 'global') {
+          if (instances.some(i => i.instance_id === currentVal)) {
             streamSelect.value = currentVal;
           } else {
             streamSelect.value = instances[0].instance_id;
             streamInstance = streamSelect.value;
           }
         }
+        updateStreamTelemetry(streamInstance);
 
         const listEl = document.getElementById('instances-list');
         listEl.innerHTML = instances.map(inst => {
