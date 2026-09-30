@@ -201,16 +201,25 @@ def _click(ctx: PipelineContext, x: float, y: float) -> None:
         # Tolerance, not a grid: OCR centers of the same button jitter a few px
         # and a hard grid would straddle cells and spuriously reset the streak.
         # Reset conditions live in classify_screen (battle/panel = real progress).
+        #
+        # Repeat = how many of the recent clicks land on this same spot (sliding
+        # window of the last _CLICK_REPEAT_WINDOW clicks). The original design
+        # counted a streak vs the *previous* click, so any loop that closes with a
+        # click elsewhere — open_panel tap x3 -> BACK -> quit-confirm 取消 — reset
+        # the counter every cycle and never fused (live 2026-09-30 20:27 run:
+        # 150 ticks of exactly that loop, zero progress, no TIMEOUT). A window
+        # count survives the intervening different-coordinate click: the stall
+        # loop keeps re-hitting its 3 anchors and the repeat count climbs to the
+        # fuse even though the cycle also contains a 取消 tap.
         try:
-            last = ctx.variables.get("_last_click_xy")
-            if (
-                last is not None
-                and abs(float(x) - float(last[0])) <= 8
-                and abs(float(y) - float(last[1])) <= 8
-            ):
-                ctx.variables["_click_repeat"] = int(ctx.variables.get("_click_repeat", 0)) + 1
-            else:
-                ctx.variables["_click_repeat"] = 1
+            cell = (round(float(x) / 8.0) * 8, round(float(y) / 8.0) * 8)
+            cells: list = ctx.variables.setdefault("_click_cells", [])
+            cells.append(cell)
+            # Keep a bounded recent history; counts decay as the loop's anchor
+            # cells slide out, so it never latches across a real scene change.
+            if len(cells) > 16:
+                del cells[: len(cells) - 16]
+            ctx.variables["_click_repeat"] = cells.count(cell)
             ctx.variables["_last_click_xy"] = (float(x), float(y))
         except (TypeError, ValueError):
             pass
@@ -762,6 +771,9 @@ def classify_screen(ctx: PipelineContext, frame: Any, rec: NodeRecognition = Non
         v["panel_open"] or v["shimen_board_open"] or v["shop_open"]
         or v["turnin_open"] or v["deposit_open"] or v["use_item_open"]
         or v["quiz_open"]
+    ) and not any(
+        kw in t for t in texts
+        for kw in ("请选择要做的事", "请选择", "要做的事")
     ) and any(
         kw in t for t in texts
         for kw in (
@@ -801,6 +813,7 @@ def classify_screen(ctx: PipelineContext, frame: Any, rec: NodeRecognition = Non
     if (v["in_battle"] or v["panel_open"]) and "_click_repeat" in ctx.variables:
         ctx.variables.pop("_click_repeat", None)
         ctx.variables.pop("_last_click_xy", None)
+        ctx.variables.pop("_click_cells", None)
 
     # Backward compatibility flags
     v["escort_dialog"] = bool(_find_text(items, "押送"))
@@ -2048,7 +2061,10 @@ def dismiss_popups(ctx: PipelineContext, act: NodeAction) -> None:
     # exits are its 领取 button (opens ANOTHER game's ad/download flow) and the back
     # key. Never click 领取; a single BACK closes it. The next tick's quit-game safety
     # above handles the (never-confirmed) case where BACK instead raises the confirm.
-    if any(kw in getattr(it, "text", "") for it in items for kw in (
+    # Guard: a task-completion reward page (任务完成 + 确定 collect) is NOT this — it
+    # must be collected, never backed out of, so let the reward_summary branch below
+    # win if its marker is present (2026-09-30 review).
+    if not any("任务完成" in getattr(it, "text", "") for it in items) and any(kw in getattr(it, "text", "") for it in items for kw in (
         "每日新发现", "上线领全武将", "首发，可以逛", "可以逛的武侠",
         "邀你战三界", "共渡灵妖劫", "共遮灵妖劫",
     )):

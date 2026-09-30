@@ -359,8 +359,12 @@ class DAGPipeline:
         # static, yet the run can be stuck in a click loop on it (live 2026-09-30:
         # 28 consecutive clicks on the same 领取 button, zero progress, the
         # static-frame watchdog never fired). The plugin click helper maintains
-        # ctx.variables["_click_repeat"]; battles and pure-wait nodes legitimately
-        # re-tap the same spot, so exempt them.
+        # ctx.variables["_click_repeat"] as "how many of the recent clicks land on
+        # this same spot" (sliding window, so an intervening different-coordinate
+        # click in an oscillating loop does NOT reset the count; live 2026-09-30
+        # 20:27: open_panel x3 -> BACK -> quit-confirm 取消 loop repeated 150 ticks
+        # under the old last-click streak without ever fusing). Battles and
+        # pure-wait nodes legitimately re-tap the same spot, so exempt them.
         wait_expected = bool(ctx.variables.get("wait_expected"))
         click_repeat = int(ctx.variables.get("_click_repeat", 0) or 0)
         if (
@@ -369,12 +373,13 @@ class DAGPipeline:
             and not ctx.variables.get("in_battle")
         ):
             logger.error(
-                f"Stall watchdog: {click_repeat} consecutive clicks on the same coordinates "
-                f"at node [{current_node.name}] with no progress (animated blind spot) — "
-                f"breaking pipeline as TIMEOUT"
+                f"Stall watchdog: {click_repeat} of the last clicks landed on the same "
+                f"coordinates at node [{current_node.name}] with no progress (animated "
+                f"blind spot) — breaking pipeline as TIMEOUT"
             )
             ctx.variables.pop("_click_repeat", None)
             ctx.variables.pop("_last_click_xy", None)
+            ctx.variables.pop("_click_cells", None)
             self.status = PipelineStatus.TIMEOUT
             return self.status
 

@@ -326,6 +326,7 @@ def test_click_repeat_counter_cleared_by_classify_progress():
     ctx = PipelineContext(device=DummyDevice())
     ctx.variables["_click_repeat"] = 9
     ctx.variables["_last_click_xy"] = (1184.0, 497.0)
+    ctx.variables["_click_cells"] = [(1184, 496)] * 6
     panel_items = [
         DummyOCRItem("日常活动", (150.0, 300.0)),
         DummyOCRItem("活跃度 20", (900.0, 400.0)),
@@ -336,3 +337,59 @@ def test_click_repeat_counter_cleared_by_classify_progress():
     # to penalize the next dead screen with an instant fuse.
     assert "_click_repeat" not in ctx.variables
     assert "_last_click_xy" not in ctx.variables
+    assert "_click_cells" not in ctx.variables
+
+
+def test_click_repeat_sliding_window_survives_interleaved_different_click():
+    """P1 root cause (live 2026-09-30 20:27): open_panel taps -> BACK -> quit-confirm
+    取消 loop repeated 150 ticks with zero progress. The old counter compared only
+    against the *previous* click, so each cycle's 取消 at a different coordinate reset
+    it to 1 and the fuse never fired. The sliding-window count of the loop's own
+    anchor cell must keep climbing across cycles."""
+    device = DummyDevice()
+    ctx = PipelineContext(device=device)
+    # Cycle: tap 活动 (353,64) x3, then the dismiss handler taps 取消 (621,419).
+    loop = [(353.0, 64.0)] * 3 + [(621.0, 419.0)]
+    peaks = []
+    for x, y in loop * 4:  # 16 clicks
+        _click(ctx, x, y)
+        peaks.append(int(ctx.variables["_click_repeat"]))
+    # At an 活动-anchor click mid-cycle the window is dominated by (353,64):
+    # the loop's repeat count reaches the fuse (>=10) even though 取消 jitters in.
+    assert max(peaks) >= 10, f"peak repeat {max(peaks)} never reached fuse (loop evaded watchdog)"
+    # The very last window state is the 取消 anchor — asserting a >=10 peak, not the
+    # tail value, is the point: the fuse fires on an anchor tick, not on the tail.
+    assert ctx.variables["_click_repeat"] < 10  # tail is the 取消 anchor
+
+
+def test_promo_carousel_not_on_real_dialog():
+    """P2: a genuine NPC dialog (请选择要做的事 prompt) must never be classified as the
+    cross-game promo carousel — a misfire would BACK a real task dialog open."""
+    ctx = PipelineContext(device=DummyDevice())
+    real_dialog = [
+        DummyOCRItem("请选择要做的事", (600.0, 450.0)),
+        DummyOCRItem("邀你战三界", (700.0, 100.0)),  # coincidental event copy
+        DummyOCRItem("领取", (1184.0, 497.0)),
+    ]
+    with patch.object(dh, "_ocr_items", return_value=real_dialog):
+        dh.classify_screen(ctx, None)
+    assert ctx.variables["promo_carousel"] is False
+    # It stays a dialog (popup only from genuine promo, which this is not).
+    assert ctx.variables["dialog_open"] is True
+    assert ctx.variables["popup_open"] is False
+
+
+def test_dismiss_promo_never_steals_reward_summary():
+    """P2: a task-completion reward page (任务完成 + 确定) must be collected, never
+    backed out of — even if it coincidentally carries a promo campaign line."""
+    device = DummyDevice()
+    ctx = PipelineContext(device=device)
+    ctx.variables["_last_frame_items"] = [
+        DummyOCRItem("任务完成", (600.0, 300.0)),
+        DummyOCRItem("邀你战三界", (700.0, 100.0)),
+        DummyOCRItem("确定", (660.0, 500.0)),
+    ]
+    dh.dismiss_popups(ctx, NodeAction(type="custom", custom_func="dismiss_popups"))
+    assert device.keys == [], "reward summary must not be dismissed with BACK"
+    assert device.clicks, "reward summary 确定 must be collected"
+    assert device.clicks[-1] == (660.0, 500.0)
