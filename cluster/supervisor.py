@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 from loguru import logger
 
-from cluster.account import AccountMatrix
+from cluster.account import AccountMatrix, AccountStatus
 from cluster.instance_pool import DeviceInstance, InstancePool, InstanceStatus
 from cluster.proxy import ProxyManager
 from core.notify.webhook import WebhookNotifier
@@ -260,13 +260,29 @@ class ClusterSupervisor:
                         screenshot_bytes=screenshot_bytes,
                     )
 
-            # 5. Account Fatigue Rotation
+            # 5. Account Fatigue Rotation & State Reconcile
             rotated_accounts = []
             if self.config.enable_account_rotation and self.account_matrix:
                 try:
                     rotated_accounts = self.account_matrix.rotate_fatigued_accounts()
                 except Exception as e:
                     logger.error(f"Supervisor error during account rotation: {e}")
+
+            # Keep instance assigned_account_id in bidirectional sync with active accounts
+            if self.account_matrix:
+                active_accounts = {
+                    acc.bound_instance_id: acc.account_id
+                    for acc in self.account_matrix.list_accounts()
+                    if acc.bound_instance_id and acc.status == AccountStatus.IN_USE
+                }
+                for inst in instances:
+                    expected_acc = active_accounts.get(inst.instance_id)
+                    if expected_acc and inst.assigned_account_id != expected_acc:
+                        logger.info(
+                            f"Supervisor reconciling instance [{inst.instance_id}] assigned_account: "
+                            f"{inst.assigned_account_id} -> {expected_acc}"
+                        )
+                        inst.assigned_account_id = expected_acc
 
             return {
                 "inspected_instances": len(instances),

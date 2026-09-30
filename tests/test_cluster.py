@@ -376,6 +376,51 @@ def test_supervisor_reconnect_disconnected_device():
     assert inst.device.is_connected() is True
 
 
+def test_supervisor_fatigue_rotation_reconciles_instance():
+    """Verify supervisor synchronizes instance.assigned_account_id when fatigue rotation occurs."""
+    pool = InstancePool()
+    inst = pool.register_instance("sync_inst", device_type="virtual")
+    inst.assigned_account_id = "acc_old"
+
+    matrix = AccountMatrix()
+    a_old = AccountConfig(
+        account_id="acc_old",
+        username="old@163.com",
+        password="pwd",
+        status=AccountStatus.IN_USE,
+        max_continuous_online_seconds=1.0,
+        bound_instance_id="sync_inst",
+        team_role_preference="leader",
+        sect="化生寺",
+    )
+    a_new = AccountConfig(
+        account_id="acc_new",
+        username="new@163.com",
+        password="pwd",
+        status=AccountStatus.IDLE,
+        team_role_preference="leader",
+        sect="化生寺",
+    )
+    matrix.register_account(a_old)
+    matrix.register_account(a_new)
+
+    a_old.start_session("sync_inst")
+    a_old.accumulated_online_seconds = 100.0  # Force fatigue
+
+    supervisor = ClusterSupervisor(
+        instance_pool=pool,
+        account_matrix=matrix,
+        config=SupervisorConfig(enable_webhook_alerts=False, enable_account_rotation=True),
+    )
+
+    res = supervisor.check_once()
+    assert res["rotated_accounts_count"] == 1
+    assert inst.assigned_account_id == "acc_new"
+    assert a_old.status == AccountStatus.RESTING
+    assert a_new.status == AccountStatus.IN_USE
+    assert a_new.bound_instance_id == "sync_inst"
+
+
 # --------------------------------------------------------------------------
 # 5. Server REST API Cluster Endpoints Integration Tests
 # --------------------------------------------------------------------------
