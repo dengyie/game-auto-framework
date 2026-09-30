@@ -30,3 +30,6 @@ venv/
 local_cache/
 logs/
 .wrangler/
+
+# runtime daily progress store (day-keyed, regenerated per device)
+plugins/mhxy_mobile/custom/data/daily_state.db

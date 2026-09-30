@@ -156,6 +156,80 @@ def test_key_action_uses_press_key_not_dead_key_event():
     assert device.keys == ["BACK"]
 
 
+# --- same-coordinate-repeat watchdog (animated blind spot) ----------------------
+# The static-frame check cannot see a stuck screen whose pages carry micro-
+# animations (reward shimmer): frames keep differing while the click helper
+# re-taps the same button forever (live 2026-09-30: 28 clicks on one 领取).
+# The plugin click helper maintains ctx.variables["_click_repeat"].
+
+
+def test_same_coord_click_repeat_breaks_animated_stuck_screen():
+    """Frames keep changing (micro-animations) yet the same cell is re-tapped —
+    the static-frame watchdog never fires, the click-repeat watchdog must."""
+    node = DAGNode(
+        name="loop", recognition=NodeRecognition(type="always"),
+        next_nodes=["loop"], timeout_sec=9999.0,
+    )
+    pipeline = DAGPipeline(
+        "click_repeat", [node], "loop",
+        stall_fail_ticks=9999, click_repeat_fail_ticks=3,
+    )
+    ctx = PipelineContext()
+    pipeline.start()
+    a, b = _blank_frame(), np.full((900, 1600, 3), 50, dtype=np.uint8)
+    status = PipelineStatus.RUNNING
+    for i in range(10):
+        # Simulate the tick's action having re-tapped the same coordinate.
+        ctx.variables["_click_repeat"] = 3
+        status = pipeline.tick(ctx, a if i % 2 == 0 else b)
+        if status == PipelineStatus.TIMEOUT:
+            break
+    assert status == PipelineStatus.TIMEOUT
+    # The fuse pops the counter so a resumed pipeline starts a fresh streak.
+    assert "_click_repeat" not in ctx.variables
+
+
+def test_click_repeat_exempts_battle_and_wait_expected():
+    """Battles legitimately re-tap skill buttons and pure-wait nodes sit still."""
+    node = DAGNode(
+        name="loop", recognition=NodeRecognition(type="always"),
+        next_nodes=["loop"], timeout_sec=9999.0,
+    )
+    pipeline = DAGPipeline(
+        "click_repeat", [node], "loop",
+        stall_fail_ticks=9999, click_repeat_fail_ticks=3,
+    )
+    ctx = PipelineContext()
+    pipeline.start()
+    frame = _blank_frame()
+    for _ in range(6):
+        ctx.variables["_click_repeat"] = 50
+        ctx.variables["in_battle"] = True
+        assert pipeline.tick(ctx, frame) == PipelineStatus.RUNNING
+        ctx.variables.pop("in_battle")
+        ctx.variables["_click_repeat"] = 50
+        ctx.variables["wait_expected"] = True
+        assert pipeline.tick(ctx, frame) == PipelineStatus.RUNNING
+    assert pipeline.status == PipelineStatus.RUNNING
+
+
+def test_click_repeat_below_threshold_does_not_break():
+    node = DAGNode(
+        name="loop", recognition=NodeRecognition(type="always"),
+        next_nodes=["loop"], timeout_sec=9999.0,
+    )
+    pipeline = DAGPipeline(
+        "click_repeat", [node], "loop",
+        stall_fail_ticks=9999, click_repeat_fail_ticks=10,
+    )
+    ctx = PipelineContext()
+    pipeline.start()
+    for i in range(10):
+        ctx.variables["_click_repeat"] = 9  # below the fuse
+        assert pipeline.tick(ctx, _blank_frame()) == PipelineStatus.RUNNING
+    assert pipeline.status == PipelineStatus.RUNNING
+
+
 # --- loguru -> list sink helper ----------------------------------------------
 @pytest.fixture
 def caplog_records():

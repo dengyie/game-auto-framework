@@ -193,6 +193,27 @@ def _click(ctx: PipelineContext, x: float, y: float) -> None:
             )
             return
     if ctx.device:
+        # Same-coordinate-repeat counter for the DAG stall watchdog's animated
+        # blind spot: a page with shimmer/reward micro-animations never looks
+        # static to the frame-diff check, yet the run is stuck (live 2026-09-30:
+        # 28 consecutive clicks on the same 领取 at (1184,497) never tripped the
+        # static-frame watchdog). dag.tick() reads this and breaks the pipeline.
+        # Tolerance, not a grid: OCR centers of the same button jitter a few px
+        # and a hard grid would straddle cells and spuriously reset the streak.
+        # Reset conditions live in classify_screen (battle/panel = real progress).
+        try:
+            last = ctx.variables.get("_last_click_xy")
+            if (
+                last is not None
+                and abs(float(x) - float(last[0])) <= 8
+                and abs(float(y) - float(last[1])) <= 8
+            ):
+                ctx.variables["_click_repeat"] = int(ctx.variables.get("_click_repeat", 0)) + 1
+            else:
+                ctx.variables["_click_repeat"] = 1
+            ctx.variables["_last_click_xy"] = (float(x), float(y))
+        except (TypeError, ValueError):
+            pass
         ctx.device.click(x, y)
         time.sleep(0.1)
 
@@ -618,9 +639,16 @@ def classify_screen(ctx: PipelineContext, frame: Any, rec: NodeRecognition = Non
     # "点击任意地方继续" story-advance prompt land in the question ROI and pair with
     # stray mid-screen candidate/banner text as "options", so quiz_answer blind-clicks
     # first option on the world HUD — never a real quiz (live 2026-09-29, 师门 10/10).
+    # Also covers the in-game "每日新发现" cross-game ad carousel, whose scrolling
+    # ad copy ("上线领全武将", "9月23日首发", "邀你战三界，共渡灵妖劫") reaches the
+    # question ROI and was mis-routed to quiz_answer for 16 ticks (live 2026-09-30
+    # 11:xx, 三界奇缘 run stuck on a promo carousel, never reached the panel).
     banner_noise = any(
         kw in t for t in texts
-        for kw in ("青丘奇珍", "灵狐栖梦", "时空之隙", "巅峰联赛", "点击任意地方继续", "正在火热进行中")
+        for kw in (
+            "青丘奇珍", "灵狐栖梦", "时空之隙", "巅峰联赛", "点击任意地方继续", "正在火热进行中",
+            "每日新发现", "上线领全武将", "首发，可以逛", "可以逛的武侠", "邀你战三界", "共渡灵妖劫", "共遮灵妖劫",
+        )
     )
     v["fashion_showroom"] = fashion_showroom
     v["sect_goal_window"] = sect_goal_window
@@ -719,7 +747,31 @@ def classify_screen(ctx: PipelineContext, frame: Any, rec: NodeRecognition = Non
         or v["shop_open"] or v["turnin_open"] or v["deposit_open"]
         or v["dialog_open"] or v["use_item_open"] or v["quiz_open"]
     )
-    v["popup_open"] = bool(v["xianyu_cost_popup"]) or bool(v["quit_game_confirm"]) or bool(v["guide_popup"]) or bool(v.get("gacha_page")) or bool(v["fullscreen_popup"]) or bool(paywall) or bool(guild_recruit) or bool(jianhui_popup) or bool(has_blocking_promo) or bool(has_subwindow) or bool(v.get("fashion_showroom")) or bool(v.get("sect_goal_window")) or ((not is_functional_window) and (
+
+    # In-game cross-game promo carousel ("每日新发现" full-screen page pushing other
+    # games) has no ×, no 关闭, no HUD 活动 button — classify otherwise sees "nothing
+    # functional" and the pipeline keeps trying open_panel against a screen with no
+    # panel, and reads the 领取 button as a task-specific dialog option (live 2026-09-30
+    # 11:xx: stuck 90 ticks, never reached the activity panel). It closes with a single
+    # BACK; route it to dismiss_popup. dialog_open is deliberately NOT excluded — the
+    # 领取 button on this page can register as a dialog option, and popup_open is
+    # evaluated before dialog_open in daily_dailies.json. The banner_noise set above
+    # already vetoes quiz. A genuine NPC dialog never carries these promo banner texts,
+    # so this cannot misfire on real task dialogs.
+    promo_carousel = (not v["in_battle"]) and not (
+        v["panel_open"] or v["shimen_board_open"] or v["shop_open"]
+        or v["turnin_open"] or v["deposit_open"] or v["use_item_open"]
+        or v["quiz_open"]
+    ) and any(
+        kw in t for t in texts
+        for kw in (
+            "每日新发现", "上线领全武将", "首发，可以逛", "可以逛的武侠",
+            "邀你战三界", "共渡灵妖劫", "共遮灵妖劫",
+        )
+    )
+    v["promo_carousel"] = promo_carousel
+
+    v["popup_open"] = bool(v["xianyu_cost_popup"]) or bool(v["quit_game_confirm"]) or bool(v["guide_popup"]) or bool(v.get("gacha_page")) or bool(v["fullscreen_popup"]) or bool(paywall) or bool(guild_recruit) or bool(jianhui_popup) or bool(has_blocking_promo) or bool(has_subwindow) or bool(v.get("fashion_showroom")) or bool(v.get("sect_goal_window")) or bool(promo_carousel) or ((not is_functional_window) and (
         any(c[0] > 1050 and c[1] < 120 and t.strip() in ("×", "X", "x", "✕") for t, c in zip(texts, centers))
         or any(any(kw in t.strip() for kw in ("确认关闭", "点击空白处", "点击屏幕", "轻触屏幕", "满月如璧", "我知道了")) for t in texts)
         or any(t.strip() in ("×", "X", "x", "✕") and 600 < c[0] < 1250 and c[1] < 250 for t, c in zip(texts, centers) if not v["shop_open"])
@@ -734,6 +786,21 @@ def classify_screen(ctx: PipelineContext, frame: Any, rec: NodeRecognition = Non
         or (v["tracker_active"] and not v.get("current_task_done"))
     )
     v["need_open_panel"] = not has_active_work and not v["panel_open"] and not v.get("all_dailies_done")
+
+    # No dialog on screen means any 领取-match streak from earlier is stale — clear it
+    # so a later genuine claim chain (its first click legitimately earns a click) is
+    # not penalized by the residue of a dead one.
+    if not v["dialog_open"] and "dialog_claim_streak" in ctx.variables:
+        ctx.variables.pop("dialog_claim_streak", None)
+
+    # Same-coordinate-repeat watchdog (see _click): battle or an open activity panel is
+    # unambiguous progress, so a repeat streak carried over from a prior dead screen is
+    # stale. Also reset whenever the click target itself has moved on (handled in _click),
+    # but classify running without any click in between (e.g. between ticks) must not
+    # accumulate residue across a genuine scene change.
+    if (v["in_battle"] or v["panel_open"]) and "_click_repeat" in ctx.variables:
+        ctx.variables.pop("_click_repeat", None)
+        ctx.variables.pop("_last_click_xy", None)
 
     # Backward compatibility flags
     v["escort_dialog"] = bool(_find_text(items, "押送"))
@@ -1614,12 +1681,36 @@ def click_dialog_choice(ctx: PipelineContext, act: NodeAction) -> None:
         matched = max(matches, key=lambda it: it.center[1]) if matches else None
         if matched is not None:
             mx, my = _center(matched)
+            # A generic 领取 CTA (reward-claim button on ad pages, promo carousels,
+            # event popups — NOT a task-specific dialogue option) can match the base
+            # keyword list forever when the page it sits on never changes or has no
+            # real exit: live 2026-09-30 the cross-game promo carousel's 领取 at
+            # (1184,497) was clicked 28 consecutive times with zero progress. A real
+            # claim changes the dialog and the streak never builds; cap 3 consecutive
+            # 领取-only matches at BACK + wait (a single BACK on a dialog is safe — it
+            # only closes the dialog; the quit-game confirm safety lives in
+            # dismiss_popups and is never confirmed).
+            if "领取" in matched.text:
+                claim_streak = int(ctx.variables.get("dialog_claim_streak", 0)) + 1
+                ctx.variables["dialog_claim_streak"] = claim_streak
+                if claim_streak >= 3:
+                    ctx.variables["dialog_claim_streak"] = 0
+                    logger.warning(
+                        f"[dialog] 领取-type option [{matched.text}] matched {claim_streak}x with no "
+                        f"progress at ({mx:.0f}, {my:.0f}) — pressing BACK instead of clicking it again"
+                    )
+                    if ctx.device is not None and hasattr(ctx.device, "press_key"):
+                        ctx.device.press_key(4)
+                    time.sleep(1.5)
+                    return
+            else:
+                ctx.variables["dialog_claim_streak"] = 0
             logger.info(f"[dialog] Clicking task-specific option [{matched.text}] at ({mx:.0f}, {my:.0f})")
             ctx.variables["dialog_fallback_count"] = 0
             _click(ctx, mx, my)
             time.sleep(1.5)
             return
-            
+
     def is_valid_choice(it):
         # Dialog choices live in the right column (~x1085, y>=340). The quest tracker
         # overlaps that column higher up ("出发闯荡前看看首席有" at y229, "什么交代的"
@@ -1951,6 +2042,22 @@ def dismiss_popups(ctx: PipelineContext, act: NodeAction) -> None:
         _click(ctx, x, y)
         logger.info(f"daily: dismiss popup via [{close_text.text}] at ({x:.0f}, {y:.0f})")
         time.sleep(1.2)
+        return
+
+    # Cross-game promo carousel ("每日新发现"): no ×, no 关闭, no 确认关闭 — the only
+    # exits are its 领取 button (opens ANOTHER game's ad/download flow) and the back
+    # key. Never click 领取; a single BACK closes it. The next tick's quit-game safety
+    # above handles the (never-confirmed) case where BACK instead raises the confirm.
+    if any(kw in getattr(it, "text", "") for it in items for kw in (
+        "每日新发现", "上线领全武将", "首发，可以逛", "可以逛的武侠",
+        "邀你战三界", "共渡灵妖劫", "共遮灵妖劫",
+    )):
+        logger.info("[dismiss_popups] Cross-game promo carousel detected; closing via single back key (never clicking 领取)")
+        if ctx.device is not None and hasattr(ctx.device, "press_key"):
+            ctx.device.press_key(4)
+        else:
+            logger.warning("[dismiss_popups] No device press_key; skipping promo carousel dismiss")
+        time.sleep(1.5)
         return
 
     # Reward summary (师门任务完成): its 确定 collects the reward and closes the page.

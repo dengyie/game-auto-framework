@@ -133,6 +133,7 @@ class DAGPipeline:
         stall_warn_ticks: int = 10,
         stall_fail_ticks: int = 20,
         stall_pixel_eps: float = 1.5,
+        click_repeat_fail_ticks: int = 10,
     ) -> None:
         self.name = name
         self.nodes: Dict[str, DAGNode] = {node.name: node for node in nodes}
@@ -159,6 +160,7 @@ class DAGPipeline:
         self.stall_warn_ticks = stall_warn_ticks
         self.stall_fail_ticks = stall_fail_ticks
         self.stall_pixel_eps = stall_pixel_eps
+        self.click_repeat_fail_ticks = click_repeat_fail_ticks
         self._static_streak = 0
         self._last_sig: Optional[np.ndarray] = None
         self._stall_warned = False
@@ -350,8 +352,33 @@ class DAGPipeline:
             logger.error(f"Node [{self.current_node_name}] not found in pipeline")
             return self.status
 
-        # 3. Static-frame stall watchdog (catches oscillating loops the node timeout
-        # cannot see — every oscillating transition resets node_entered_time).
+        # 3. Stall watchdogs (catch oscillating loops the node timeout cannot see —
+        # every oscillating transition resets node_entered_time).
+        # 3a. Same-coordinate-repeat watchdog: the animated blind spot of the static
+        # frame check — a page with shimmer/reward micro-animations never looks
+        # static, yet the run can be stuck in a click loop on it (live 2026-09-30:
+        # 28 consecutive clicks on the same 领取 button, zero progress, the
+        # static-frame watchdog never fired). The plugin click helper maintains
+        # ctx.variables["_click_repeat"]; battles and pure-wait nodes legitimately
+        # re-tap the same spot, so exempt them.
+        wait_expected = bool(ctx.variables.get("wait_expected"))
+        click_repeat = int(ctx.variables.get("_click_repeat", 0) or 0)
+        if (
+            click_repeat >= self.click_repeat_fail_ticks
+            and not wait_expected
+            and not ctx.variables.get("in_battle")
+        ):
+            logger.error(
+                f"Stall watchdog: {click_repeat} consecutive clicks on the same coordinates "
+                f"at node [{current_node.name}] with no progress (animated blind spot) — "
+                f"breaking pipeline as TIMEOUT"
+            )
+            ctx.variables.pop("_click_repeat", None)
+            ctx.variables.pop("_last_click_xy", None)
+            self.status = PipelineStatus.TIMEOUT
+            return self.status
+
+        # 3b. Static-frame streak watchdog.
         streak = self._static_streak_after(frame, ctx)
         if streak >= self.stall_fail_ticks:
             logger.error(

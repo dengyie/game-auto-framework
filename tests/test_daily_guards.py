@@ -208,3 +208,131 @@ def test_quiz_bank_miss_with_header_clicks_first_option():
     handle_quiz(ctx, NodeAction(type="custom", custom_func="handle_quiz"))
     # Upstream policy intact inside a genuine quiz window: first option in ROI order.
     assert device.clicks == [(500.0, 260.0)]
+
+
+# --- Fix A/B/C: cross-game promo carousel incident (live 2026-09-30 11:xx) -----
+# The 每日新发现 full-screen ad page (no ×, no 关闭) mis-routed the run: banner text
+# landed in the quiz question ROI, and its 领取 button looped click_dialog_choice 28
+# times. Three guards: classify routes it to dismiss (single BACK, never 领取),
+# the 领取-match streak degrades to BACK, and the same-coord-repeat counter covers
+# the static-frame watchdog's animated blind spot.
+
+
+def _promo_items():
+    return [
+        DummyOCRItem("每日新发现", (700.0, 50.0)),
+        DummyOCRItem("上线领全武将", (700.0, 120.0)),
+        DummyOCRItem("9月23日首发，可以逛的武侠小说", (700.0, 300.0)),
+        DummyOCRItem("领取", (1184.0, 497.0)),
+    ]
+
+
+def test_promo_carousel_routes_to_popup_despite_dialog():
+    device = DummyDevice()
+    ctx = PipelineContext(device=device)
+    with patch.object(dh, "_ocr_items", return_value=_promo_items()):
+        dh.classify_screen(ctx, None)
+    v = ctx.variables
+    assert v["promo_carousel"] is True
+    assert v["popup_open"] is True
+    # The 领取 button registers as a dialog choice — popup must still win
+    # (the popup branch is evaluated before dialog in daily_dailies.json).
+    assert v["dialog_open"] is True
+    # banner_noise veto keeps the banner out of the quiz router.
+    assert v["quiz_open"] is False
+
+
+def test_promo_carousel_dismisses_via_single_back_never_claim():
+    device = DummyDevice()
+    ctx = PipelineContext(device=device)
+    ctx.variables["_last_frame_items"] = _promo_items()
+    dh.dismiss_popups(ctx, NodeAction(type="custom", custom_func="dismiss_popups"))
+    assert device.keys == [4]
+    assert device.clicks == [], "never click the promo 领取"
+
+
+def test_dialog_claim_streak_degrades_to_back_after_3():
+    device = DummyDevice()
+    ctx = PipelineContext(device=device)
+    ctx.variables["_last_frame_items"] = [
+        DummyOCRItem("请选择要做的事", (600.0, 450.0)),
+        DummyOCRItem("领取", (1184.0, 497.0)),
+    ]
+    act = NodeAction(type="custom", custom_func="click_dialog_choice")
+    click_dialog_choice(ctx, act)  # streak 1: click
+    click_dialog_choice(ctx, act)  # streak 2: click
+    assert device.clicks == [(1184.0, 497.0)] * 2
+    assert device.keys == []
+    click_dialog_choice(ctx, act)  # streak 3: no more claim clicks — BACK
+    assert device.clicks == [(1184.0, 497.0)] * 2
+    assert device.keys == [4]
+    # BACK resets the streak (no latch): a later genuine claim gets a fresh cycle.
+    assert ctx.variables["dialog_claim_streak"] == 0
+    click_dialog_choice(ctx, act)
+    assert device.clicks == [(1184.0, 497.0)] * 3
+    assert device.keys == [4]
+
+
+def test_dialog_claim_streak_resets_on_non_claim_match():
+    device = DummyDevice()
+    ctx = PipelineContext(device=device)
+    claim_items = [
+        DummyOCRItem("请选择要做的事", (600.0, 450.0)),
+        DummyOCRItem("领取", (1184.0, 497.0)),
+    ]
+    task_items = [
+        DummyOCRItem("请选择要做的事", (600.0, 450.0)),
+        DummyOCRItem("师门任务", (1085.0, 420.0)),
+    ]
+    act = NodeAction(type="custom", custom_func="click_dialog_choice")
+    ctx.variables["_last_frame_items"] = claim_items
+    click_dialog_choice(ctx, act)
+    click_dialog_choice(ctx, act)  # streak 2
+    ctx.variables["_last_frame_items"] = task_items
+    click_dialog_choice(ctx, act)  # real task choice resets the streak
+    assert ctx.variables["dialog_claim_streak"] == 0
+    ctx.variables["_last_frame_items"] = claim_items
+    click_dialog_choice(ctx, act)  # fresh cycle: click 领取, not instant BACK
+    assert device.clicks[-1] == (1184.0, 497.0)
+    assert device.clicks[-2] == (1085.0, 420.0)  # the earlier real task choice
+    assert device.keys == []
+
+
+def test_dialog_claim_streak_cleared_when_no_dialog_on_screen():
+    ctx = PipelineContext(device=DummyDevice())
+    ctx.variables["dialog_claim_streak"] = 2
+    panel_items = [
+        DummyOCRItem("日常活动", (150.0, 300.0)),
+        DummyOCRItem("活跃度 20", (900.0, 400.0)),
+    ]
+    with patch.object(dh, "_ocr_items", return_value=panel_items):
+        dh.classify_screen(ctx, None)
+    assert ctx.variables["panel_open"] is True
+    assert "dialog_claim_streak" not in ctx.variables
+
+
+def test_click_same_coord_counter_with_jitter_tolerance():
+    device = DummyDevice()
+    ctx = PipelineContext(device=device)
+    for x, y in ((1184.0, 497.0), (1186.0, 495.0), (1182.0, 499.0), (1185.0, 496.0)):
+        _click(ctx, x, y)
+    # ±3px OCR jitter on the same button still accumulates (no grid straddling).
+    assert ctx.variables["_click_repeat"] == 4
+    _click(ctx, 500.0, 300.0)  # target moved on -> streak restarts
+    assert ctx.variables["_click_repeat"] == 1
+
+
+def test_click_repeat_counter_cleared_by_classify_progress():
+    ctx = PipelineContext(device=DummyDevice())
+    ctx.variables["_click_repeat"] = 9
+    ctx.variables["_last_click_xy"] = (1184.0, 497.0)
+    panel_items = [
+        DummyOCRItem("日常活动", (150.0, 300.0)),
+        DummyOCRItem("活跃度 20", (900.0, 400.0)),
+    ]
+    with patch.object(dh, "_ocr_items", return_value=panel_items):
+        dh.classify_screen(ctx, None)
+    # Reaching the panel is unambiguous progress — a stale streak must not linger
+    # to penalize the next dead screen with an instant fuse.
+    assert "_click_repeat" not in ctx.variables
+    assert "_last_click_xy" not in ctx.variables
