@@ -303,8 +303,8 @@
 
           <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
             <select id="stream-proto-select" onchange="onStreamProtocolChange()" style="padding:5px 10px; font-size:0.82rem;">
+              <option value="snapshot" selected>传输协议: 高画质动态快照 (推荐/低延迟)</option>
               <option value="mjpeg">传输协议: MJPEG 连续视频流</option>
-              <option value="snapshot">传输协议: 高画质动态快照 (轮询)</option>
             </select>
             <select id="stream-fps-select" onchange="onStreamFpsChange()" style="padding:5px 10px; font-size:0.82rem;">
               <option value="15">帧率: 15 FPS (低延迟)</option>
@@ -334,7 +334,7 @@
 
             <!-- Main Video / Image Stream Container -->
             <div class="video-stream-box" id="video-click-area" onclick="handleVideoClick(event)">
-              <img id="main-video-img" class="video-player" src="/api/v1/stream?instance_id=inst_01&fps=10" alt="实时设备监控画面" crossorigin="anonymous">
+              <img id="main-video-img" class="video-player" src="" alt="实时设备监控画面">
             </div>
           </div>
 
@@ -1003,7 +1003,7 @@
   <script>
     let currentTab = 'instances';
     let autoRefreshTimer = null;
-    let streamProtocol = 'mjpeg';
+    let streamProtocol = 'snapshot';
     let streamFps = 10;
     let streamInstance = 'inst_01';
     let snapshotTimer = null;
@@ -1211,7 +1211,7 @@
 
         img.src = getStreamUrl();
       } else {
-        updateStreamStatusBadge('SNAPSHOT');
+        updateStreamStatusBadge('LIVE');
         let isFetching = false;
         const currentGen = streamGeneration;
         const fetchSnap = () => {
@@ -1222,13 +1222,14 @@
           const onDone = () => {
             isFetching = false;
             if (isStreamActive && streamGeneration === currentGen) {
-              const interval = Math.max(200, Math.round(1000 / streamFps));
+              const interval = Math.max(100, Math.round(1000 / streamFps));
               snapshotTimer = setTimeout(fetchSnap, interval);
             }
           };
           nextImg.onload = () => {
             if (isStreamActive && streamGeneration === currentGen) {
               img.src = nextImg.src;
+              updateStreamStatusBadge('LIVE');
               const latency = Math.round(performance.now() - startT);
               const latEl = document.getElementById('stream-latency-badge');
               if (latEl) latEl.innerText = `延迟: ${latency}ms`;
@@ -1240,6 +1241,7 @@
             onDone();
           };
           nextImg.onerror = () => {
+            updateStreamStatusBadge('RECONNECTING');
             onDone();
           };
           nextImg.src = getStreamUrl();

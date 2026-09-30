@@ -3,20 +3,20 @@
 - **Target URL**: `http://127.0.0.1:8000`
 - **Verdict**: `PASSED (ALL SLA MET)`
 - **Total Requests**: `4`
-- **Duration**: `4.82s`
-- **Throughput (QPS)**: `0.83` req/sec
-- **Overall P50 Latency**: `5.2 ms`
-- **Overall P95 Latency**: `4813.75 ms`
-- **Overall P99 Latency**: `4813.75 ms`
+- **Duration**: `4.07s`
+- **Throughput (QPS)**: `0.98` req/sec
+- **Overall P50 Latency**: `9.56 ms`
+- **Overall P95 Latency**: `4064.04 ms`
+- **Overall P99 Latency**: `4064.04 ms`
 
 ### Per-Endpoint Breakdown:
 
 | Endpoint | Requests | Success % | Mean (ms) | P50 (ms) | P95 (ms) | P99 (ms) |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| `/health` | 1 | 100.0% | 1.15ms | 1.15ms | 1.15ms | 1.15ms |
-| `/api/v1/plugins` | 1 | 100.0% | 5.2ms | 5.2ms | 5.2ms | 5.2ms |
-| `/api/v1/status` | 1 | 100.0% | 0.53ms | 0.53ms | 0.53ms | 0.53ms |
-| `/api/v1/screenshot` | 1 | 100.0% | 4813.75ms | 4813.75ms | 4813.75ms | 4813.75ms |
+| `/health` | 1 | 100.0% | 1.93ms | 1.93ms | 1.93ms | 1.93ms |
+| `/api/v1/plugins` | 1 | 100.0% | 9.56ms | 9.56ms | 9.56ms | 9.56ms |
+| `/api/v1/status` | 1 | 100.0% | 0.56ms | 0.56ms | 0.56ms | 0.56ms |
+| `/api/v1/screenshot` | 1 | 100.0% | 4064.04ms | 4064.04ms | 4064.04ms | 4064.04ms |
 | `/dashboard` | 0 | 100.0% | 0.0ms | 0.0ms | 0.0ms | 0.0ms |
 
 ### SLA Evaluation:

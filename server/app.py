@@ -508,7 +508,31 @@ def get_screenshot(instance_id: Optional[str] = None) -> Response:
             if not frame_bytes:
                 frame_bytes = _get_default_offline_frame()
 
-        return Response(content=frame_bytes, media_type=image_media_type(frame_bytes))
+        if frame_bytes and frame_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+            try:
+                mat = cv2.imdecode(np.frombuffer(frame_bytes, np.uint8), cv2.IMREAD_COLOR)
+                if mat is not None:
+                    h, w = mat.shape[:2]
+                    if w > 1280 or h > 1280:
+                        scale = 1280.0 / max(w, h)
+                        mat = cv2.resize(mat, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+                    ok, jpg = cv2.imencode(".jpg", mat, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+                    if ok:
+                        frame_bytes = jpg.tobytes()
+            except Exception as e:
+                logger.debug(f"JPEG transcode error in get_screenshot: {e}")
+
+        return Response(
+            content=frame_bytes,
+            media_type=image_media_type(frame_bytes),
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate, pre-check=0, post-check=0, max-age=0",
+                "Pragma": "no-cache",
+                "Expires": "0",
+                "X-Accel-Buffering": "no",
+                "Access-Control-Allow-Origin": "*",
+            },
+        )
     except HTTPException:
         raise
     except Exception as e:
@@ -560,9 +584,12 @@ def _generate_mjpeg_frames(instance_id: Optional[str] = None, fps: float = 10.0,
                     logger.debug(f"JPEG transcode error: {e}")
 
             content_type = image_media_type(frame_bytes).encode("ascii")
+            content_len = str(len(frame_bytes)).encode("ascii")
             yield (
                 b"--frame\r\n"
-                b"Content-Type: " + content_type + b"\r\n\r\n" + frame_bytes + b"\r\n"
+                b"Content-Type: " + content_type + b"\r\n"
+                b"Content-Length: " + content_len + b"\r\n\r\n"
+                + frame_bytes + b"\r\n"
             )
             yielded += 1
         time.sleep(interval)
@@ -580,6 +607,13 @@ def stream_video(instance_id: Optional[str] = None, fps: float = 10.0, max_frame
     return StreamingResponse(
         _generate_mjpeg_frames(instance_id=instance_id, fps=fps, max_frames=max_frames),
         media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate, pre-check=0, post-check=0, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "X-Accel-Buffering": "no",
+            "Access-Control-Allow-Origin": "*",
+        },
     )
 
 
@@ -846,15 +880,45 @@ def unregister_instance(instance_id: str) -> Dict[str, Any]:
 @app.get("/api/v1/cluster/instances/{instance_id}/screenshot")
 @app.head("/api/v1/cluster/instances/{instance_id}/screenshot")
 def get_instance_screenshot(instance_id: str) -> Response:
-    """Capture screenshot frame from a specific cluster instance."""
+    """Capture screenshot frame from a specific cluster instance with JPEG transcode and fallback."""
     inst = CLUSTER_POOL.get_instance(instance_id)
     if not inst:
         raise HTTPException(status_code=404, detail=f"Instance [{instance_id}] not found.")
+    data = None
     try:
         data = inst.screencap()
-        return Response(content=data, media_type=image_media_type(data))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Screenshot failed on [{instance_id}]: {e}")
+        logger.debug(f"Screenshot failed on [{instance_id}]: {e}")
+        data = None
+    if not data:
+        data = _get_default_offline_frame()
+
+    if data and data.startswith(b"\x89PNG\r\n\x1a\n"):
+        try:
+            mat = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+            if mat is not None:
+                h, w = mat.shape[:2]
+                if w > 1280 or h > 1280:
+                    scale = 1280.0 / max(w, h)
+                    mat = cv2.resize(mat, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+                ok, jpg = cv2.imencode(".jpg", mat, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+                if ok:
+                    data = jpg.tobytes()
+        except Exception as e:
+            logger.debug(f"JPEG transcode error in get_instance_screenshot: {e}")
+
+    media_type = image_media_type(data)
+    return Response(
+        content=data,
+        media_type=media_type,
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate, pre-check=0, post-check=0, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "X-Accel-Buffering": "no",
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
 
 
 @app.get("/api/v1/cluster/instances/{instance_id}/stream")
@@ -867,6 +931,13 @@ def stream_instance_video(instance_id: str, fps: float = 10.0, max_frames: Optio
     return StreamingResponse(
         _generate_mjpeg_frames(instance_id=instance_id, fps=fps, max_frames=max_frames),
         media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate, pre-check=0, post-check=0, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "X-Accel-Buffering": "no",
+            "Access-Control-Allow-Origin": "*",
+        },
     )
 
 

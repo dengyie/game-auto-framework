@@ -239,7 +239,8 @@ def test_video_stream_mjpeg_multipart_and_transcoding(client):
         assert "multipart/x-mixed-replace" in res.headers["content-type"]
         assert "boundary=frame" in res.headers["content-type"]
         assert b"--frame\r\n" in res.content
-        assert b"Content-Type: image/jpeg\r\n\r\n" in res.content
+        assert b"Content-Type: image/jpeg\r\n" in res.content
+        assert b"Content-Length: " in res.content
         assert b"\xff\xd8" in res.content
 
         # 3. Test cluster instance direct stream with max_frames=2
@@ -247,7 +248,8 @@ def test_video_stream_mjpeg_multipart_and_transcoding(client):
         assert inst_res.status_code == 200
         assert "multipart/x-mixed-replace" in inst_res.headers["content-type"]
         assert b"--frame\r\n" in inst_res.content
-        assert b"Content-Type: image/jpeg\r\n\r\n" in inst_res.content
+        assert b"Content-Type: image/jpeg\r\n" in inst_res.content
+        assert b"Content-Length: " in inst_res.content
 
         # 4. Non-existent instance returns 404
         err_res = client.get("/api/v1/cluster/instances/non_existent_cluster_inst/stream")

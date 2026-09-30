@@ -208,13 +208,16 @@ class AdbDevice(BaseDevice):
             except Exception as e:
                 logger.warning(f"ADB connection attempt error for [{self.serial}]: {e}")
 
-        # Check if device is in adb devices list
+        # Check if device is in adb devices list with 'device' state
         try:
             res = subprocess.run(["adb", "devices"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5)
-            if self.serial in res.stdout.decode("utf-8", errors="ignore"):
-                self._connected = True
-                self._probe_device_specs()
-                return True
+            out_str = res.stdout.decode("utf-8", errors="ignore")
+            for line in out_str.splitlines():
+                parts = line.strip().split()
+                if len(parts) >= 2 and parts[0] == self.serial and parts[1] == "device":
+                    self._connected = True
+                    self._probe_device_specs()
+                    return True
         except Exception as e:
             logger.error(f"Failed to check adb devices: {e}")
 
@@ -284,7 +287,7 @@ class AdbDevice(BaseDevice):
 
         cmd = ["adb", "-s", self.serial, "exec-out", "screencap", "-p"]
         try:
-            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=15)
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=4)
             if res.returncode == 0 and len(res.stdout) > 0:
                 raw_bytes = res.stdout
                 if len(raw_bytes) >= 24 and raw_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
@@ -297,7 +300,14 @@ class AdbDevice(BaseDevice):
                 self._last_baseline_bytes = None  # Invalidate baseline cache on new raw capture
                 self._last_cap_time = time.time()
                 return raw_bytes
-            raise RuntimeError(f"screencap failed with code {res.returncode}: {res.stderr.decode()}")
+            err_msg = res.stderr.decode("utf-8", errors="ignore")
+            if "offline" in err_msg.lower() or "not found" in err_msg.lower():
+                self._connected = False
+            raise RuntimeError(f"screencap failed with code {res.returncode}: {err_msg}")
+        except subprocess.TimeoutExpired:
+            self._connected = False
+            logger.error(f"ADB screencap timed out on [{self.serial}]")
+            raise
         except Exception as e:
             logger.error(f"ADB screencap failed on [{self.serial}]: {e}")
             now = time.time()
