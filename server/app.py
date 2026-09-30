@@ -627,41 +627,32 @@ def init_default_cluster(config_path: Optional[str] = None) -> None:
             )
         logger.info(f"Registered {len(proxies)} Shanghai residential proxies in PROXY_MANAGER")
 
-    # 3. Register Instances & Bind Accounts
+    # 3. Register Real ADB Instances & Bind Accounts
     accounts = ACCOUNT_MATRIX.list_accounts()
-    if len(CLUSTER_POOL.get_instances()) == 0 and accounts:
-        for i, acc in enumerate(accounts, start=1):
-            inst_id = f"inst_{i:02d}"
-            # inst_01: live CloudPhone (SM-F900F) via FRP STCP tunnel.
-            # inst_02: live MuMu 12 on home-win via SSH reverse tunnel.
-            if i == 1:
-                device_type = "adb"
-                serial = "127.0.0.1:55556"
-                name = "CloudPhone-winner"
-            elif i == 2:
-                device_type = "adb"
-                serial = "127.0.0.1:16384"
-                name = "MuMu12-home-win"
-            else:
-                device_type = "virtual"
-                serial = None
-                name = acc.role_name or f"Inst_{i}"
+    if len(CLUSTER_POOL.get_instances()) == 0:
+        real_configs = [
+            ("inst_01", "adb", "127.0.0.1:55556", "云手机 (SM-F900F)", "daily_shimen"),
+            ("inst_02", "adb", "127.0.0.1:16384", "Windows MuMu模拟器", "basic_tasks"),
+        ]
+        for i, (inst_id, dev_type, serial, dev_name, pipe_name) in enumerate(real_configs, start=1):
+            acc = accounts[i - 1] if len(accounts) >= i else None
             inst = CLUSTER_POOL.register_instance(
                 instance_id=inst_id,
-                device_type=device_type,
+                device_type=dev_type,
                 serial=serial,
-                name=name,
+                name=dev_name,
             )
             inst.connect()
-            inst.assigned_account_id = acc.account_id
-            inst.pipeline_name = "daily_shimen" if i == 1 else "basic_tasks"
+            if acc:
+                inst.assigned_account_id = acc.account_id
+            inst.pipeline_name = pipe_name
             inst.pipeline_status = PipelineStatus.IDLE
             inst.status = InstanceStatus.IDLE
             inst.heartbeat()
 
             # Bind proxy: prefer account's preset proxy or claim next available residential proxy
             target_proxy = None
-            if acc.bound_proxy_id:
+            if acc and acc.bound_proxy_id:
                 p = PROXY_MANAGER.get_proxy(acc.bound_proxy_id)
                 if p and p.is_available:
                     target_proxy = p
@@ -671,11 +662,13 @@ def init_default_cluster(config_path: Optional[str] = None) -> None:
             if target_proxy:
                 PROXY_MANAGER.bind_instance_to_proxy(inst_id, target_proxy.proxy_id)
                 inst.assigned_proxy_id = target_proxy.proxy_id
-                acc.start_session(inst_id, target_proxy.proxy_id)
+                if acc:
+                    acc.start_session(inst_id, target_proxy.proxy_id)
             else:
-                acc.start_session(inst_id)
+                if acc:
+                    acc.start_session(inst_id)
 
-        # 4. Form 1 Leader + Members Team Topology
+        # 4. Form 1 Leader + 1 Member Dual-Device Team Topology
         inst_ids = [inst.instance_id for inst in CLUSTER_POOL.get_instances()]
         if len(inst_ids) >= 2 and len(CLUSTER_POOL.list_teams()) == 0:
             CLUSTER_POOL.create_team(
@@ -684,7 +677,7 @@ def init_default_cluster(config_path: Optional[str] = None) -> None:
                 member_ids=inst_ids[1:],
                 target_activity="team_zhuogui",
             )
-        logger.info(f"Formed cluster team_01 with {len(inst_ids)} instances")
+        logger.info(f"Formed cluster team_01 with {len(inst_ids)} real instances")
 
     # 5. Start Supervisor watchdog
     if not SUPERVISOR.running:

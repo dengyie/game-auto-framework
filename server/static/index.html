@@ -293,14 +293,11 @@
             </span>
             <div style="display:flex; gap:6px;">
               <button id="btn-view-cinema" class="active" onclick="setStreamViewMode('cinema')">单设备特写</button>
-              <button id="btn-view-matrix" onclick="setStreamViewMode('matrix')">多设备 5 宫格矩阵</button>
+              <button id="btn-view-matrix" onclick="setStreamViewMode('matrix')">双设备矩阵分屏</button>
             </div>
             <select id="stream-instance-select" onchange="onStreamInstanceChange()" style="padding:6px 12px; font-weight:600;">
-              <option value="inst_01">实例 1: inst_01 (队长机)</option>
-              <option value="inst_02">实例 2: inst_02</option>
-              <option value="inst_03">实例 3: inst_03</option>
-              <option value="inst_04">实例 4: inst_04</option>
-              <option value="inst_05">实例 5: inst_05</option>
+              <option value="inst_01">实例 1: inst_01 (云手机)</option>
+              <option value="inst_02">实例 2: inst_02 (Windows MuMu)</option>
               <option value="global">主任务执行器 (Global Device)</option>
             </select>
           </div>
@@ -376,7 +373,7 @@
     <!-- Tab 3: Teams Topology -->
     <div id="pane-teams" class="tab-pane">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
-        <h3 style="font-size:1.05rem;">5人协作组队拓扑</h3>
+        <h3 style="font-size:1.05rem;">多设备协作组队拓扑</h3>
         <button class="primary" onclick="openCreateTeamModal()">+ 组建新队伍</button>
       </div>
       <div class="table-container">
@@ -663,8 +660,8 @@
           <select id="reg-team-leader"></select>
         </div>
         <div class="form-group">
-          <label>队员实例 (多选逗号分隔，最多 4 台)</label>
-          <input type="text" id="reg-team-members" placeholder="inst_02, inst_03, inst_04, inst_05">
+          <label>队员实例 (多选逗号分隔)</label>
+          <input type="text" id="reg-team-members" placeholder="inst_02">
         </div>
         <div class="form-group">
           <label>目标协作活动</label>
@@ -1477,6 +1474,25 @@
         const res = await fetch('/api/v1/cluster/instances');
         const instances = await res.json();
         document.getElementById('tab-cnt-inst').innerText = instances.length;
+
+        // Synchronize stream instance select options with active cluster instances
+        const streamSelect = document.getElementById('stream-instance-select');
+        if (streamSelect && instances.length > 0) {
+          const currentVal = streamSelect.value;
+          const optionsHtml = instances.map(inst => {
+            const safeId = escapeHtml(inst.instance_id);
+            const safeName = escapeHtml(inst.name);
+            return `<option value="${safeId}">${safeId} (${safeName})</option>`;
+          });
+          optionsHtml.push('<option value="global">主任务执行器 (Global Device)</option>');
+          streamSelect.innerHTML = optionsHtml.join('');
+          if (instances.some(i => i.instance_id === currentVal) || currentVal === 'global') {
+            streamSelect.value = currentVal;
+          } else {
+            streamSelect.value = instances[0].instance_id;
+            streamInstance = streamSelect.value;
+          }
+        }
 
         const listEl = document.getElementById('instances-list');
         listEl.innerHTML = instances.map(inst => {
