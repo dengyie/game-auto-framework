@@ -178,6 +178,7 @@ class ClusterSupervisor:
                         )
                         if inst.connect():
                             self.reconnect_counts[inst_id] = 0
+                            self.app_restart_counts.pop(inst_id, None)
                             self._last_error_probe.pop(inst_id, None)
                             # Clear the down-alert cooldown so a subsequent disconnect within the
                             # 300s window re-alerts instead of being silently swallowed.
@@ -223,6 +224,7 @@ class ClusterSupervisor:
                                 self._error_alerted.pop(inst_id, None)
                                 self._last_error_probe.pop(inst_id, None)
                                 self.reconnect_counts[inst_id] = 0
+                                self.app_restart_counts.pop(inst_id, None)
                                 self._alert_cooldowns.pop(f"集群实例掉线严重告警 [{inst_id}]", None)
                                 self.total_healed_events += 1
                                 reconnected_instances.append(inst_id)
@@ -290,6 +292,12 @@ class ClusterSupervisor:
                                     title=f"客户端反复崩溃熔断 [{inst_id}]",
                                     message=f"实例 [{inst_id}] 上的游戏客户端反复崩溃达 {restarts} 次，已终止自愈并置为 ERROR。",
                                 )
+                        else:
+                            # App is alive: the crash streak is broken, so reset the CONSECUTIVE-crash
+                            # counter. Without this the counter accumulates crashes across the whole
+                            # process lifetime and eventual single crashes over days would falsely
+                            # trip the "反复崩溃熔断" breaker and brick an otherwise healthy instance.
+                            self.app_restart_counts.pop(inst_id, None)
                     except Exception as e:
                         logger.error(f"Supervisor: App running check error on [{inst_id}]: {e}")
 
@@ -383,7 +391,10 @@ class ClusterSupervisor:
                 return False
 
             self.reconnect_counts[instance_id] = 0
+            self.app_restart_counts.pop(instance_id, None)
             self._last_error_probe.pop(instance_id, None)
+            # Clear the down-alert cooldown so a subsequent disconnect within the
+            # 300s window re-alerts instead of being silently swallowed.
             self._alert_cooldowns.pop(f"集群实例掉线严重告警 [{instance_id}]", None)
             self.total_healed_events += 1
             if self._error_alerted.pop(instance_id, False):

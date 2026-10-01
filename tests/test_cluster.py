@@ -518,6 +518,55 @@ def test_supervisor_reconnect_instance_manual_clears_latch_and_notifies():
         inst.connect = orig_connect
 
 
+def test_supervisor_app_restart_counter_is_consecutive_not_cumulative():
+    """Root-cause guard: app_restart_counts must reset once the app is observed healthy,
+    so occasional crashes spread over time never accumulate into a false 反复崩溃熔断."""
+    pool = InstancePool()
+    inst = pool.register_instance("cons_inst", device_type="virtual")
+    dev = MockCrashingDevice()
+    dev.connect()
+    inst.device = dev
+    inst.status = InstanceStatus.BUSY
+
+    supervisor = ClusterSupervisor(
+        instance_pool=pool,
+        config=SupervisorConfig(enable_webhook_alerts=False, max_app_restarts=3),
+    )
+
+    # Crash #1 -> restart, consecutive counter == 1.
+    dev._app_running = False
+    supervisor.check_once()
+    assert dev.start_app_called == 1
+    assert supervisor.app_restart_counts.get("cons_inst") == 1
+
+    # App healthy for a while -> the consecutive-crash streak is broken and must reset.
+    supervisor.check_once()
+    assert supervisor.app_restart_counts.get("cons_inst") is None
+
+    # A later, unrelated crash must be treated as the FIRST crash of a new streak again.
+    dev._app_running = False
+    supervisor.check_once()
+    assert dev.start_app_called == 2
+    assert inst.status != InstanceStatus.ERROR
+    assert supervisor.app_restart_counts.get("cons_inst") == 1
+
+
+def test_supervisor_reconnect_instance_clears_app_restart_count():
+    """Verify manual reconnect drops stale app-restart bookkeeping (review P3)."""
+    pool = InstancePool()
+    inst = pool.register_instance("arc_inst", device_type="virtual")
+    inst.connect()
+
+    supervisor = ClusterSupervisor(
+        instance_pool=pool,
+        config=SupervisorConfig(enable_webhook_alerts=False),
+    )
+    # Pre-seed a stale crash streak, then reconnect: it must be cleared.
+    supervisor.app_restart_counts["arc_inst"] = 2
+    assert supervisor.reconnect_instance("arc_inst") is True
+    assert supervisor.app_restart_counts.get("arc_inst") is None
+
+
 def test_supervisor_forget_instance_clears_latch_on_unregister():
     """Verify forget_instance drops watchdog latch/probe/counter state so a re-registered
     instance with the same id starts clean (no stale ERROR latch or spurious recovery)."""
