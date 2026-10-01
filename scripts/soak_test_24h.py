@@ -135,7 +135,7 @@ class SoakTestRunner:
         # / ClusterSupervisor._instance) that the REST layer and other test suites share and rebind.
         # Constructing a private pool/supervisor keeps `check_once()` inspecting exactly the instances
         # this runner registers, eliminating cross-suite isolation breakage.
-        self.instance_pool = InstancePool()
+        self.instance_pool = InstancePool(is_singleton=False)
         self.proxy_manager = ProxyManager()
         self.account_matrix = AccountMatrix()
         self.supervisor = ClusterSupervisor(

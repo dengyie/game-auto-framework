@@ -909,6 +909,9 @@ def unregister_instance(instance_id: str) -> Dict[str, Any]:
     success = CLUSTER_POOL.unregister_instance(instance_id)
     if not success:
         raise HTTPException(status_code=404, detail=f"Instance [{instance_id}] not found.")
+    # Drop watchdog latch/probe state so a future re-registration with the same id starts clean
+    # (no stale ERROR latch suppressing the next real alert or firing a spurious recovery notice).
+    SUPERVISOR.forget_instance(instance_id)
     return {"status": "unregistered", "instance_id": instance_id}
 
 

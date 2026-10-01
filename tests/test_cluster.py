@@ -518,6 +518,109 @@ def test_supervisor_reconnect_instance_manual_clears_latch_and_notifies():
         inst.connect = orig_connect
 
 
+def test_supervisor_forget_instance_clears_latch_on_unregister():
+    """Verify forget_instance drops watchdog latch/probe/counter state so a re-registered
+    instance with the same id starts clean (no stale ERROR latch or spurious recovery)."""
+    from unittest.mock import MagicMock
+
+    pool = InstancePool()
+    inst = pool.register_instance("forget_inst", device_type="virtual")
+    inst.connect()
+    inst.device.disconnect()
+
+    notifier = MagicMock()
+    supervisor = ClusterSupervisor(
+        instance_pool=pool,
+        config=SupervisorConfig(
+            enable_webhook_alerts=True,
+            enable_account_rotation=False,
+            max_reconnect_attempts=1,
+            probe_reconnect_interval_sec=0.0,
+        ),
+        notifier=notifier,
+    )
+    orig_connect = inst.connect
+    link = {"up": False}
+    inst.connect = lambda: orig_connect() if link["up"] else False
+    try:
+        supervisor.check_once()  # burst retry fails
+        supervisor.check_once()  # latch ERROR + single alert
+        assert supervisor._error_alerted.get("forget_inst") is True
+        assert supervisor.reconnect_counts.get("forget_inst") == 1
+
+        # Simulate unregister: supervisor bookkeeping must be fully dropped.
+        supervisor.forget_instance("forget_inst")
+        assert supervisor._error_alerted.get("forget_inst", False) is False
+        assert supervisor._last_error_probe.get("forget_inst") is None
+        assert supervisor.reconnect_counts.get("forget_inst") is None
+        assert supervisor.app_restart_counts.get("forget_inst") is None
+        assert any(k.endswith("[forget_inst]") for k in supervisor._alert_cooldowns) is False
+
+        # Fresh re-registration with the same id: a new disconnect must re-alert
+        # (proving no stale latch swallowed the edge trigger).
+        link["up"] = False
+        supervisor.check_once()  # first fault pass: bursts
+        alerts_before = notifier.send_alert.call_count
+        supervisor.check_once()  # latch + alert again (recovered, not suppressed)
+        assert notifier.send_alert.call_count == alerts_before + 1
+    finally:
+        inst.connect = orig_connect
+
+
+def test_supervisor_reconnect_clears_alert_cooldown_for_re_disconnect():
+    """Verify a recovery path clears the down-alert cooldown, so a disconnect within the
+    300s cooldown window re-alerts instead of being silently swallowed."""
+    from unittest.mock import MagicMock
+
+    pool = InstancePool()
+    inst = pool.register_instance("cd_inst", device_type="virtual")
+    inst.connect()
+    inst.device.disconnect()
+
+    notifier = MagicMock()
+    supervisor = ClusterSupervisor(
+        instance_pool=pool,
+        config=SupervisorConfig(
+            enable_webhook_alerts=True,
+            enable_account_rotation=False,
+            max_reconnect_attempts=1,
+            probe_reconnect_interval_sec=0.0,
+        ),
+        notifier=notifier,
+    )
+    orig_connect = inst.connect
+    link = {"up": False}
+    inst.connect = lambda: orig_connect() if link["up"] else False
+    try:
+        # 1. First disconnect -> latch ERROR + 1 alert.
+        supervisor.check_once()  # burst fail
+        supervisor.check_once()  # latch + alert
+        assert notifier.send_alert.call_count == 1
+        assert f"集群实例掉线严重告警 [cd_inst]" in supervisor._alert_cooldowns
+
+        # 2. Device returns, then disconnects again — all within the cooldown window.
+        link["up"] = True
+        supervisor.check_once()  # probe self-heals, clears down-cooldown
+        assert f"集群实例掉线严重告警 [cd_inst]" not in supervisor._alert_cooldowns
+
+        link["up"] = False
+        supervisor.check_once()  # burst fail
+        supervisor.check_once()  # re-latch + MUST re-alert despite 300s cooldown
+        assert notifier.send_alert.call_count == 2
+    finally:
+        inst.connect = orig_connect
+
+
+def test_instance_pool_non_singleton_does_not_hijack_global_singleton():
+    """Verify an InstancePool built with is_singleton=False does NOT overwrite the class
+    singleton that get_pool() returns."""
+    global_pool = InstancePool.get_pool()
+    private = InstancePool(is_singleton=False)
+    assert InstancePool.get_pool() is global_pool
+    assert InstancePool.get_pool() is not private
+    assert private is not global_pool
+
+
 def test_supervisor_fatigue_rotation_reconciles_instance():
     """Verify supervisor synchronizes instance.assigned_account_id when fatigue rotation occurs."""
     pool = InstancePool()

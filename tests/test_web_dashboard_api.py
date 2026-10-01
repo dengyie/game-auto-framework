@@ -336,4 +336,29 @@ def test_cluster_instance_manual_reconnect_endpoint(client):
         client.delete("/api/v1/cluster/instances/reconnect_inst")
 
 
+def test_cluster_unregister_clears_supervisor_forget_state(client):
+    """Verify DELETE /api/v1/cluster/instances/{id} calls supervisor.forget_instance so a
+    re-registered instance reusing the id starts with clean watchdog state."""
+    from server.app import SUPERVISOR
+
+    client.post("/api/v1/cluster/instances/register", json={"instance_id": "forget_api_inst", "device_type": "virtual"})
+
+    # Simulate latched watchdog state for this instance id.
+    SUPERVISOR._error_alerted["forget_api_inst"] = True
+    SUPERVISOR._last_error_probe["forget_api_inst"] = 12345.0
+    SUPERVISOR.reconnect_counts["forget_api_inst"] = 3
+
+    try:
+        res = client.delete("/api/v1/cluster/instances/forget_api_inst")
+        assert res.status_code == 200
+        assert res.json()["status"] == "unregistered"
+        # Watchdog state must be purged on unregister.
+        assert SUPERVISOR._error_alerted.get("forget_api_inst", False) is False
+        assert SUPERVISOR._last_error_probe.get("forget_api_inst") is None
+        assert SUPERVISOR.reconnect_counts.get("forget_api_inst") is None
+    finally:
+        SUPERVISOR._error_alerted.pop("forget_api_inst", None)
+        SUPERVISOR._last_error_probe.pop("forget_api_inst", None)
+        SUPERVISOR.reconnect_counts.pop("forget_api_inst", None)
+        client.delete("/api/v1/cluster/instances/forget_api_inst")
 

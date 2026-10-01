@@ -457,11 +457,15 @@ class InstancePool:
 
     _instance: Optional[InstancePool] = None
 
-    def __init__(self) -> None:
+    def __init__(self, is_singleton: bool = True) -> None:
         self._instances: Dict[str, DeviceInstance] = {}
         self._teams: Dict[str, TeamTopology] = {}
         self._lock = threading.RLock()
-        InstancePool._instance = self
+        # A pool constructed as "not the singleton" (e.g. an isolated soak-test fleet) must not
+        # hijack InstancePool._instance; otherwise every later get_pool() call in the same process
+        # silently resolves to that private pool.
+        if is_singleton:
+            InstancePool._instance = self
 
     @classmethod
     def get_pool(cls) -> InstancePool:

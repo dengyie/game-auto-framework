@@ -179,6 +179,9 @@ class ClusterSupervisor:
                         if inst.connect():
                             self.reconnect_counts[inst_id] = 0
                             self._last_error_probe.pop(inst_id, None)
+                            # Clear the down-alert cooldown so a subsequent disconnect within the
+                            # 300s window re-alerts instead of being silently swallowed.
+                            self._alert_cooldowns.pop(f"集群实例掉线严重告警 [{inst_id}]", None)
                             self.total_healed_events += 1
                             reconnected_instances.append(inst_id)
                             logger.info(f"Supervisor: Reconnected instance [{inst_id}] successfully.")
@@ -220,6 +223,7 @@ class ClusterSupervisor:
                                 self._error_alerted.pop(inst_id, None)
                                 self._last_error_probe.pop(inst_id, None)
                                 self.reconnect_counts[inst_id] = 0
+                                self._alert_cooldowns.pop(f"集群实例掉线严重告警 [{inst_id}]", None)
                                 self.total_healed_events += 1
                                 reconnected_instances.append(inst_id)
                                 logger.info(f"Supervisor: Instance [{inst_id}] self-healed via low-frequency probe.")
@@ -345,6 +349,25 @@ class ClusterSupervisor:
                 "total_healed_events": self.total_healed_events,
             }
 
+    def forget_instance(self, instance_id: str) -> None:
+        """
+        Drop all watchdog bookkeeping for an instance that has been unregistered.
+        Without this, a re-registered instance reusing the same id would inherit a stale
+        ERROR latch (suppressing the next real severe-disconnect alert and firing a spurious
+        recovery notification) and stale probe/counter state.
+        """
+        with self._lock:
+            self.reconnect_counts.pop(instance_id, None)
+            self.app_restart_counts.pop(instance_id, None)
+            self._error_alerted.pop(instance_id, None)
+            self._last_error_probe.pop(instance_id, None)
+            # Drop any alert-cooldown bearing this instance id (down/recovery/crash/broker
+            # titles all embed "[{instance_id}]"), otherwise a re-registered id inherits a
+            # live cooldown and its first real alert gets silently swallowed.
+            suffix = f"[{instance_id}]"
+            for title in [t for t in self._alert_cooldowns if t.endswith(suffix)]:
+                self._alert_cooldowns.pop(title, None)
+
     def reconnect_instance(self, instance_id: str) -> bool:
         """
         Force an immediate reconnection attempt for one instance (manual intervention path).
@@ -361,6 +384,7 @@ class ClusterSupervisor:
 
             self.reconnect_counts[instance_id] = 0
             self._last_error_probe.pop(instance_id, None)
+            self._alert_cooldowns.pop(f"集群实例掉线严重告警 [{instance_id}]", None)
             self.total_healed_events += 1
             if self._error_alerted.pop(instance_id, False):
                 self._dispatch_alert(

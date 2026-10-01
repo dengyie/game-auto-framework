@@ -2,6 +2,7 @@ import json
 import os
 import time
 from pathlib import Path
+from cluster.instance_pool import InstancePool
 from scripts.soak_test_24h import SoakTestRunner, get_current_rss_mb
 
 
@@ -9,6 +10,24 @@ def test_get_current_rss_mb():
     rss = get_current_rss_mb()
     assert isinstance(rss, float)
     assert rss > 0.0
+
+
+def test_soak_runner_does_not_hijack_pool_singleton(tmp_path: Path):
+    """SoakTestRunner builds a private fleet: constructing it must NOT rebind the shared
+    InstancePool._instance singleton that the REST layer and other suites resolve lazily."""
+    global_pool = InstancePool.get_pool()
+    runner = SoakTestRunner(
+        duration_hours=0.0001,
+        num_instances=1,
+        device_type="virtual",
+        inject_faults=False,
+        report_path=str(tmp_path / "iso_soak_report.json"),
+    )
+    try:
+        assert InstancePool.get_pool() is global_pool
+        assert InstancePool.get_pool() is not runner.instance_pool
+    finally:
+        runner.stop()
 
 
 def test_soak_test_runner_smoke_execution(tmp_path: Path):
