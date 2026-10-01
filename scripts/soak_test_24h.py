@@ -130,11 +130,20 @@ class SoakTestRunner:
         self.faults_recovered = 0
         self.deadlocks_detected = 0
 
-        # Subsystems
-        self.instance_pool = InstancePool.get_pool()
-        self.proxy_manager = ProxyManager.get_instance()
-        self.account_matrix = AccountMatrix.get_instance()
-        self.supervisor = ClusterSupervisor.get_instance()
+        # Subsystems — fully self-contained. The soak runner registers its own fleet and drives
+        # its own supervisor, so it must NOT ride the process-wide singletons (InstancePool._instance
+        # / ClusterSupervisor._instance) that the REST layer and other test suites share and rebind.
+        # Constructing a private pool/supervisor keeps `check_once()` inspecting exactly the instances
+        # this runner registers, eliminating cross-suite isolation breakage.
+        self.instance_pool = InstancePool()
+        self.proxy_manager = ProxyManager()
+        self.account_matrix = AccountMatrix()
+        self.supervisor = ClusterSupervisor(
+            instance_pool=self.instance_pool,
+            proxy_manager=self.proxy_manager,
+            account_matrix=self.account_matrix,
+            config=SupervisorConfig(enable_webhook_alerts=False),
+        )
 
         # Telemetry CSV writer initialization
         self._init_csv()
@@ -170,6 +179,9 @@ class SoakTestRunner:
             self.supervisor.app_restart_counts.clear()
             self.supervisor.total_healed_events = 0
             self.supervisor.total_alerts_sent = 0
+            self.supervisor._error_alerted.clear()
+            self.supervisor._last_error_probe.clear()
+            self.supervisor._alert_cooldowns.clear()
 
     def setup_cluster(self) -> None:
         """Initialize the 5-instance cluster, accounts, proxies and supervisor."""

@@ -24,6 +24,10 @@ class SupervisorConfig(BaseModel):
     check_interval_sec: float = Field(default=5.0, description="Watchdog polling interval")
     stall_threshold_sec: float = Field(default=60.0, description="Max allowed silent period for busy instance")
     max_reconnect_attempts: int = Field(default=3, description="Max ADB reconnection retries before ERROR state")
+    probe_reconnect_interval_sec: float = Field(
+        default=60.0,
+        description="Low-frequency connect probe interval (s) after an instance enters ERROR, enabling unattended self-healing",
+    )
     max_app_restarts: int = Field(default=3, description="Max client process restarts per instance")
     enable_app_watchdog: bool = Field(default=True, description="Detect and auto-restart crashed game processes")
     target_package: str = Field(default="com.netease.my", description="Monitored game package name")
@@ -60,6 +64,10 @@ class ClusterSupervisor:
         self.inspection_passes: int = 0
         self._alert_cooldowns: Dict[str, float] = {}
         self._alert_min_interval_sec: float = 300.0
+        # Edge-triggered per-instance flags: fire a "severe disconnect" alert ONCE on
+        # transition into ERROR (not on every 5s poll), enabling low-frequency self-heal.
+        self._error_alerted: Dict[str, bool] = {}
+        self._last_error_probe: Dict[str, float] = {}
 
         self.running: bool = False
         self._stop_event = threading.Event()
@@ -170,19 +178,57 @@ class ClusterSupervisor:
                         )
                         if inst.connect():
                             self.reconnect_counts[inst_id] = 0
-                            self._alert_cooldowns.pop(f"集群实例掉线严重告警 [{inst_id}]", None)
+                            self._last_error_probe.pop(inst_id, None)
                             self.total_healed_events += 1
                             reconnected_instances.append(inst_id)
                             logger.info(f"Supervisor: Reconnected instance [{inst_id}] successfully.")
+                            if self._error_alerted.pop(inst_id, False):
+                                self._dispatch_alert(
+                                    title=f"集群实例已恢复上线 [{inst_id}]",
+                                    message=f"实例 [{inst_id}] 已完成 ADB 重连，实例恢复可用。",
+                                )
                         else:
                             self.reconnect_counts[inst_id] = attempts + 1
                     else:
-                        inst.status = InstanceStatus.ERROR
-                        inst.error_message = f"ADB disconnection unresolved after {attempts} attempts."
-                        self._dispatch_alert(
-                            title=f"集群实例掉线严重告警 [{inst_id}]",
-                            message=f"实例 [{inst_id}] 连续 {attempts} 次重连 ADB 失败，已被标记为 ERROR 状态，请人工介入检查宿主或网络。",
-                        )
+                        # Burst retries exhausted: latch ERROR, alert ONCE (edge-triggered),
+                        # then keep a low-frequency probe so the instance self-heals when the
+                        # host/emulator returns without requiring a manual service restart.
+                        now_probe = time.time()
+                        if not self._error_alerted.get(inst_id, False):
+                            self._error_alerted[inst_id] = True
+                            self._last_error_probe[inst_id] = now_probe
+                            inst.status = InstanceStatus.ERROR
+                            inst.error_message = (
+                                f"ADB disconnection unresolved after {attempts} attempts. "
+                                f"Low-frequency reconnect probe every {int(self.config.probe_reconnect_interval_sec)}s."
+                            )
+                            self._dispatch_alert(
+                                title=f"集群实例掉线严重告警 [{inst_id}]",
+                                message=(
+                                    f"实例 [{inst_id}] 连续 {attempts} 次重连 ADB 失败，已被标记为 ERROR。"
+                                    f"看门狗将以 {int(self.config.probe_reconnect_interval_sec)}s 间隔低频探测自动恢复，"
+                                    f"请核验宿主设备或网络。"
+                                ),
+                            )
+                        elif (now_probe - self._last_error_probe.get(inst_id, 0.0)) >= self.config.probe_reconnect_interval_sec:
+                            self._last_error_probe[inst_id] = now_probe
+                            logger.info(
+                                f"Supervisor: Instance [{inst_id}] in ERROR — probing reconnect "
+                                f"(interval {int(self.config.probe_reconnect_interval_sec)}s)..."
+                            )
+                            if inst.connect():
+                                self._error_alerted.pop(inst_id, None)
+                                self._last_error_probe.pop(inst_id, None)
+                                self.reconnect_counts[inst_id] = 0
+                                self.total_healed_events += 1
+                                reconnected_instances.append(inst_id)
+                                logger.info(f"Supervisor: Instance [{inst_id}] self-healed via low-frequency probe.")
+                                self._dispatch_alert(
+                                    title=f"集群实例已恢复上线 [{inst_id}]",
+                                    message=f"实例 [{inst_id}] 经低频探测成功重连，已自动恢复可用。",
+                                )
+                            else:
+                                inst.status = InstanceStatus.ERROR
 
                 # 2. Heartbeat Stall Inspection
                 if inst.status == InstanceStatus.BUSY:
@@ -299,6 +345,31 @@ class ClusterSupervisor:
                 "total_healed_events": self.total_healed_events,
             }
 
+    def reconnect_instance(self, instance_id: str) -> bool:
+        """
+        Force an immediate reconnection attempt for one instance (manual intervention path).
+        Clears watchdog latch/probe state on success and emits a recovery notification
+        if a severe-disconnect alert had previously been raised.
+        """
+        with self._lock:
+            inst = self.instance_pool.get_instance(instance_id)
+            if not inst:
+                return False
+
+            if not inst.connect():
+                return False
+
+            self.reconnect_counts[instance_id] = 0
+            self._last_error_probe.pop(instance_id, None)
+            self.total_healed_events += 1
+            if self._error_alerted.pop(instance_id, False):
+                self._dispatch_alert(
+                    title=f"集群实例已恢复上线 [{instance_id}]",
+                    message=f"实例 [{instance_id}] 已通过手动重连接口恢复可用。",
+                )
+            logger.info(f"Supervisor: Instance [{instance_id}] reconnected via manual trigger.")
+            return True
+
     def _dispatch_alert(
         self,
         title: str,
@@ -351,4 +422,7 @@ class ClusterSupervisor:
                 "total_alerts_sent": self.total_alerts_sent,
                 "reconnect_counts": dict(self.reconnect_counts),
                 "app_restart_counts": dict(self.app_restart_counts),
+                "probe_reconnect_interval_sec": self.config.probe_reconnect_interval_sec,
+                "error_latched_instances": [k for k, v in self._error_alerted.items() if v],
+                "last_error_probe": {k: round(v, 2) for k, v in self._last_error_probe.items()},
             }

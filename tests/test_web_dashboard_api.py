@@ -306,4 +306,34 @@ def test_screenshot_and_stream_instance_isolation(client):
         client.delete("/api/v1/cluster/instances/inst_iso_failing")
 
 
+def test_cluster_instance_manual_reconnect_endpoint(client):
+    """Verify POST /api/v1/cluster/instances/{id}/reconnect force-heals an offline instance."""
+    from server.app import CLUSTER_POOL, SUPERVISOR
+
+    client.post("/api/v1/cluster/instances/register", json={"instance_id": "reconnect_inst", "device_type": "virtual"})
+    try:
+        # 404 for unknown instance
+        missing = client.post("/api/v1/cluster/instances/no_such_inst/reconnect")
+        assert missing.status_code == 404
+
+        inst = CLUSTER_POOL.get_instance("reconnect_inst")
+        assert inst is not None
+        inst.connect()
+        inst.device.disconnect()  # Drop the device to force a real reconnect
+
+        # Latch the supervisor's ERROR edge flag so recovery notification path is exercised
+        SUPERVISOR._error_alerted["reconnect_inst"] = True
+
+        res = client.post("/api/v1/cluster/instances/reconnect_inst/reconnect")
+        assert res.status_code == 200
+        assert res.json()["status"] == "reconnected"
+        assert inst.device.is_connected() is True
+        assert SUPERVISOR.reconnect_counts.get("reconnect_inst", 0) == 0
+        assert SUPERVISOR._error_alerted.get("reconnect_inst", False) is False
+    finally:
+        SUPERVISOR._error_alerted.pop("reconnect_inst", None)
+        SUPERVISOR._last_error_probe.pop("reconnect_inst", None)
+        client.delete("/api/v1/cluster/instances/reconnect_inst")
+
+
 

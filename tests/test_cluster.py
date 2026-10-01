@@ -376,6 +376,148 @@ def test_supervisor_reconnect_disconnected_device():
     assert inst.device.is_connected() is True
 
 
+def test_supervisor_error_edge_alert_fires_once_then_probe_self_heals():
+    """Verify severe-disconnect alert is edge-triggered (ONCE) and low-frequency probe self-heals."""
+    from unittest.mock import MagicMock
+
+    pool = InstancePool()
+    inst = pool.register_instance("probe_inst", device_type="virtual")
+    inst.connect()
+    inst.device.disconnect()  # Force offline
+
+    notifier = MagicMock()
+    supervisor = ClusterSupervisor(
+        instance_pool=pool,
+        config=SupervisorConfig(
+            enable_webhook_alerts=True,
+            enable_account_rotation=False,
+            max_reconnect_attempts=1,
+            probe_reconnect_interval_sec=0.0,
+        ),
+        notifier=notifier,
+    )
+    orig_connect = inst.connect
+    link = {"up": False}
+    inst.connect = lambda: orig_connect() if link["up"] else False
+    try:
+        # Pass 1: burst retry fails -> counter incremented, no alert yet.
+        supervisor.check_once()
+        assert notifier.send_alert.call_count == 0
+
+        # Pass 2: retries exhausted -> latch ERROR and fire the severe alert exactly ONCE.
+        supervisor.check_once()
+        assert inst.status == InstanceStatus.ERROR
+        assert notifier.send_alert.call_count == 1
+        assert "掉线严重告警" in notifier.send_alert.call_args.kwargs["title"]
+
+        # Pass 3: still offline -> edge-triggered, NO duplicate alert.
+        supervisor.check_once()
+        assert notifier.send_alert.call_count == 1
+
+        # Device returns -> low-frequency probe self-heals and sends a recovery notification.
+        link["up"] = True
+        res = supervisor.check_once()
+        assert "probe_inst" in res["reconnected_instances"]
+        assert inst.device.is_connected() is True
+        assert inst.status == InstanceStatus.IDLE
+        assert supervisor._error_alerted.get("probe_inst", False) is False
+        assert supervisor.reconnect_counts.get("probe_inst") == 0
+        titles = [c.kwargs["title"] for c in notifier.send_alert.call_args_list]
+        assert any("已恢复上线" in t for t in titles)
+    finally:
+        inst.connect = orig_connect
+
+
+def test_supervisor_error_probe_respects_interval():
+    """Verify an ERROR-latched instance is not re-probed before probe_reconnect_interval_sec elapses."""
+    from unittest.mock import MagicMock
+
+    pool = InstancePool()
+    inst = pool.register_instance("probe_hold_inst", device_type="virtual")
+    inst.connect()
+    inst.device.disconnect()
+
+    notifier = MagicMock()
+    supervisor = ClusterSupervisor(
+        instance_pool=pool,
+        config=SupervisorConfig(
+            enable_webhook_alerts=True,
+            enable_account_rotation=False,
+            max_reconnect_attempts=1,
+            probe_reconnect_interval_sec=60.0,
+        ),
+        notifier=notifier,
+    )
+    orig_connect = inst.connect
+    link = {"up": False}
+    inst.connect = lambda: orig_connect() if link["up"] else False
+    try:
+        supervisor.check_once()  # burst retry fails -> counter 1
+        supervisor.check_once()  # latch ERROR + single alert
+        assert inst.status == InstanceStatus.ERROR
+        assert supervisor._error_alerted.get("probe_hold_inst") is True
+
+        # Device is back, but the probe interval has NOT elapsed -> must stay ERROR (no probe yet).
+        link["up"] = True
+        supervisor.check_once()
+        assert inst.status == InstanceStatus.ERROR
+        assert inst.device.is_connected() is False
+
+        # Backdate the probe timestamp to simulate the interval elapsing -> probe self-heals.
+        supervisor._last_error_probe["probe_hold_inst"] = time.time() - 61.0
+        res = supervisor.check_once()
+        assert "probe_hold_inst" in res["reconnected_instances"]
+        assert inst.device.is_connected() is True
+    finally:
+        inst.connect = orig_connect
+
+
+def test_supervisor_reconnect_instance_manual_clears_latch_and_notifies():
+    """Verify manual reconnect_instance() clears the error latch and emits a recovery alert."""
+    from unittest.mock import MagicMock
+
+    pool = InstancePool()
+    inst = pool.register_instance("man_inst", device_type="virtual")
+    inst.connect()
+    inst.device.disconnect()
+
+    notifier = MagicMock()
+    supervisor = ClusterSupervisor(
+        instance_pool=pool,
+        config=SupervisorConfig(
+            enable_webhook_alerts=True,
+            enable_account_rotation=False,
+            max_reconnect_attempts=1,
+            probe_reconnect_interval_sec=60.0,
+        ),
+        notifier=notifier,
+    )
+    orig_connect = inst.connect
+    link = {"up": False}
+    inst.connect = lambda: orig_connect() if link["up"] else False
+    try:
+        supervisor.check_once()  # burst retry fails
+        supervisor.check_once()  # latch ERROR + single offline alert
+        assert inst.status == InstanceStatus.ERROR
+        assert supervisor._error_alerted.get("man_inst") is True
+        initial_alerts = supervisor.total_alerts_sent
+
+        # Device comes back -> manual reconnect clears latch and notifies recovery.
+        link["up"] = True
+        assert supervisor.reconnect_instance("man_inst") is True
+        assert supervisor._error_alerted.get("man_inst", False) is False
+        assert supervisor.reconnect_counts.get("man_inst") == 0
+        assert inst.device.is_connected() is True
+        assert supervisor.total_alerts_sent == initial_alerts + 1
+        titles = [c.kwargs["title"] for c in notifier.send_alert.call_args_list]
+        assert any("已恢复上线" in t for t in titles)
+
+        # Unknown instance id is a no-op returning False.
+        assert supervisor.reconnect_instance("no_such_instance") is False
+    finally:
+        inst.connect = orig_connect
+
+
 def test_supervisor_fatigue_rotation_reconciles_instance():
     """Verify supervisor synchronizes instance.assigned_account_id when fatigue rotation occurs."""
     pool = InstancePool()

@@ -640,6 +640,13 @@ PROXY_MANAGER = ProxyManager.get_instance()
 ACCOUNT_MATRIX = AccountMatrix.get_instance()
 SUPERVISOR = ClusterSupervisor.get_instance()
 
+# Explicitly bind the supervisor to the app-level registries (instead of relying on the
+# lazy class-singleton lookup) so the REST layer always operates on the same pool/proxy/account
+# state that instances are registered into — even if another pool instance is constructed elsewhere.
+SUPERVISOR.instance_pool = CLUSTER_POOL
+SUPERVISOR.proxy_manager = PROXY_MANAGER
+SUPERVISOR.account_matrix = ACCOUNT_MATRIX
+
 
 def init_default_cluster(config_path: Optional[str] = None) -> None:
     """Initialize default cluster state, accounts, proxies, instances and supervisor."""
@@ -880,6 +887,20 @@ def stop_instance_task(instance_id: str) -> Dict[str, Any]:
         raise HTTPException(status_code=404, detail=f"Instance [{instance_id}] not found.")
     inst.stop()
     return {"status": "stopped", "instance_id": instance_id}
+
+
+@app.post("/api/v1/cluster/instances/{instance_id}/reconnect")
+def reconnect_cluster_instance(instance_id: str) -> Dict[str, Any]:
+    """Force an immediate ADB reconnection for a specific cluster instance (manual self-heal)."""
+    inst = CLUSTER_POOL.get_instance(instance_id)
+    if not inst:
+        raise HTTPException(status_code=404, detail=f"Instance [{instance_id}] not found.")
+    if not SUPERVISOR.reconnect_instance(instance_id):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Reconnect failed for [{instance_id}]: {inst.error_message or 'device offline'}",
+        )
+    return {"status": "reconnected", "instance_id": instance_id}
 
 
 @app.delete("/api/v1/cluster/instances/{instance_id}")
