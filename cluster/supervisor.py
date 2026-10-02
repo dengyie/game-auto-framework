@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 from loguru import logger
@@ -171,27 +172,38 @@ class ClusterSupervisor:
 
             instances = self.instance_pool.list_instances()
 
+            # 0. Idle-instance liveness probe: the cached is_connected() flag only
+            # flips when an operation on the device fails, so a device that dies
+            # while the instance sits idle (cloud phone powered off, tunnel down)
+            # is invisible to check 1 below. Probe cheaply at a low frequency;
+            # a failed probe flips the device flag so the normal reconnect path
+            # (burst retries -> ERROR latch -> low-frequency self-heal) takes over.
+            # Due instances probe concurrently: probe() can block up to its own
+            # timeout (adb: 5s) and N serial probes would stall the whole pass.
+            due_idle = [
+                inst for inst in instances
+                if inst.status == InstanceStatus.IDLE
+                and inst.device is not None
+                and inst.device.is_connected()
+                and (now - self._last_idle_probe.get(inst.instance_id, 0.0)) >= self.config.idle_probe_interval_sec
+            ]
+            if due_idle:
+                for inst in due_idle:
+                    self._last_idle_probe[inst.instance_id] = now
+
+                def _probe_one(inst) -> None:
+                    if not inst.device.probe():
+                        logger.warning(
+                            f"Supervisor: Instance [{inst.instance_id}] idle device is unreachable "
+                            f"(silent drop detected); handing over to reconnect logic."
+                        )
+
+                max_workers = min(len(due_idle), 4)
+                with ThreadPoolExecutor(max_workers=max_workers) as pool:
+                    list(pool.map(_probe_one, due_idle))
+
             for inst in instances:
                 inst_id = inst.instance_id
-
-                # 0. Idle-instance liveness probe: the cached is_connected() flag only
-                # flips when an operation on the device fails, so a device that dies
-                # while the instance sits idle (cloud phone powered off, tunnel down)
-                # is invisible to check 1 below. Probe cheaply at a low frequency;
-                # a failed probe flips the device flag so the normal reconnect path
-                # (burst retries -> ERROR latch -> low-frequency self-heal) takes over.
-                if (
-                    inst.status == InstanceStatus.IDLE
-                    and inst.device is not None
-                    and inst.device.is_connected()
-                ):
-                    if (now - self._last_idle_probe.get(inst_id, 0.0)) >= self.config.idle_probe_interval_sec:
-                        self._last_idle_probe[inst_id] = now
-                        if not inst.device.probe():
-                            logger.warning(
-                                f"Supervisor: Instance [{inst_id}] idle device is unreachable "
-                                f"(silent drop detected); handing over to reconnect logic."
-                            )
 
                 # 1. Device Connection Inspection & Auto-Reconnect
                 if not inst.device or not inst.device.is_connected() or inst.status == InstanceStatus.DISCONNECTED:

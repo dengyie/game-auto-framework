@@ -21,8 +21,13 @@ import json
 import logging
 import os
 import platform
-import resource
 import signal
+
+if platform.system() == "Windows":
+    resource = None  # POSIX-only; get_current_rss_mb reads /proc on Linux instead
+else:
+    import resource
+
 import sys
 import threading
 import time
@@ -62,6 +67,13 @@ def get_current_rss_mb() -> float:
                         return float(parts[1]) / 1024.0
         except Exception:
             pass
+
+    if resource is None:
+        # Windows dev boxes have no POSIX resource module and no /proc; the 24h
+        # soak itself only runs on the Linux deployment host, so 0.0 is a safe
+        # placeholder that keeps metrics collection non-fatal.
+        logging.getLogger(__name__).debug("RSS unavailable on this platform (no resource module)")
+        return 0.0
 
     usage = resource.getrusage(resource.RUSAGE_SELF)
     # ru_maxrss is bytes on macOS, kilobytes on Linux

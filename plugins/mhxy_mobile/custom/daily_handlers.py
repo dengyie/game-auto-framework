@@ -44,6 +44,8 @@ from plugins.mhxy_mobile.custom.quiz_solver import (
 # --- constants (1280x720 baseline) -------------------------------------------
 TOPBAR_ACTIVITY = (353, 64)
 PANEL_CLOSE = (1142, 48)
+# promo BACK burst budget (8) + suspend grace before the run is declared blocked
+PROMO_BLOCK_STREAK = 20
 ESCORT_JOIN = (669, 377)           # 运镖 row 参加 (unscrolled panel, row 3 left)
 # 日常活动 tab, list scrolled to the very top (live 2026-09-26 & 2026-09-28):
 # row 1: 秘境降妖 (669, 148), 师门任务 (1077, 148)
@@ -828,6 +830,12 @@ def classify_screen(ctx: PipelineContext, frame: Any, rec: NodeRecognition = Non
         ctx.variables.pop("quiz_refusal_streak", None)
     if not v["popup_open"] and "promo_back_streak" in ctx.variables:
         ctx.variables.pop("promo_back_streak", None)
+    # promo_block_latch means "currently stuck behind a promo that ignores BACK";
+    # it clears with the promo itself so a later legitimate completion is not
+    # masked, while a promo persisting to the end keeps the Summary honest.
+    if not v["popup_open"] and ctx.variables.get("promo_block_latch"):
+        ctx.variables.pop("promo_block_latch", None)
+        logger.warning("[classify] promo_block_latch cleared — promo overlay gone")
 
     # Same-coordinate-repeat watchdog (see _click): battle or an open activity panel is
     # unambiguous progress, so a repeat streak carried over from a prior dead screen is
@@ -2110,6 +2118,19 @@ def dismiss_popups(ctx: PipelineContext, act: NodeAction) -> None:
     )):
         promo_back_streak = int(ctx.variables.get("promo_back_streak", 0)) + 1
         ctx.variables["promo_back_streak"] = promo_back_streak
+        if promo_back_streak > PROMO_BLOCK_STREAK:
+            # An animated promo that ignores BACK spins here with no clicks, so
+            # neither watchdog can fire and the run would idle to ticks-exhausted
+            # and exit 0 (false success). Latch the block so the Summary and the
+            # runner report it as a blocked run instead.
+            ctx.variables["promo_block_latch"] = True
+            logger.error(
+                f"[dismiss_popups] Promo BACK streak {promo_back_streak} exceeds "
+                f"{PROMO_BLOCK_STREAK} — latching promo_block_latch; the run cannot "
+                f"progress past this promo and must not report success"
+            )
+            time.sleep(2.0)
+            return
         if promo_back_streak > 8:
             # Live 2026-10-02: 30 consecutive promo BACKs walked the client all the
             # way to the launcher. Beyond a bounded burst, stop pressing and wait —

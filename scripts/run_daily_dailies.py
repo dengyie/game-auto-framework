@@ -251,6 +251,7 @@ def main(max_ticks: int = 30, serial: str = "127.0.0.1:55556", queue: list | Non
                     f"escort_deferred={ctx.variables.get('escort_deferred', False)}, "
                     f"mijing_quota_exhausted={ctx.variables.get('mijing_quota_exhausted', False)}, "
                     f"mijing_blocked={ctx.variables.get('mijing_blocked', False)}, "
+                    f"promo_blocked={ctx.variables.get('promo_block_latch', False)}, "
                     f"status={status.name}"
                 )
         except Exception:
@@ -273,7 +274,12 @@ def main(max_ticks: int = 30, serial: str = "127.0.0.1:55556", queue: list | Non
         return 0
     if status in (PipelineStatus.TIMEOUT, PipelineStatus.FAILED):
         return 1
-    # Ticks exhausted while still RUNNING is a normal end for this runner's usage.
+    # Ticks exhausted while still RUNNING is a normal end for this runner's usage
+    # — unless the run is latched behind an undismissable promo overlay: idling
+    # to the end there must not report success to the scheduler.
+    if ctx is not None and ctx.variables.get("promo_block_latch"):
+        logger.error("Ticks exhausted with promo_block_latch set — reporting failure")
+        return 1
     return 0
 
 

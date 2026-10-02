@@ -373,6 +373,88 @@ def test_adb_is_foreground_app_parses_focus_line_and_fails_open():
         assert dev.is_foreground_app("com.netease.my") is True  # fail open
 
 
+def test_ensure_game_foreground_swallows_start_app_error():
+    """start_app raising must not propagate out of the guard: the streak still
+    accumulates so the caller's abort limit stays the single failure exit."""
+    class _BrokenDevice(_FgDevice):
+        def start_app(self, package_name):
+            raise RuntimeError("adb gone")
+
+    dev = _BrokenDevice(foreground=False)
+    assert ensure_game_foreground(dev, "com.netease.my", 0) == 1
+
+
+def test_adb_start_app_retries_inconclusive_dumpsys_without_monkey_fallback():
+    """A transient empty dumpsys must not lie (old pidof behavior) nor trigger the
+    monkey fallback: retry once, then honor the parsed focus line."""
+    dev = AdbDevice(serial="mock_device:5555")
+    focused_game = (
+        "  mCurrentFocus=Window{79aeef4 u0 com.netease.my/com.netease.game.MessiahNativeActivity}\n"
+    )
+    calls = []
+
+    def fake_run_adb(*args):
+        calls.append(args[0])
+        if args[0] == "dumpsys":
+            return "" if calls.count("dumpsys") == 1 else focused_game
+        if args[0] == "cmd":
+            return "priority=0\n  com.netease.my/com.netease.game.LauncherActivity\n"
+        return "Starting: Intent...\n"
+
+    with patch.object(dev._driver, "_run_adb", side_effect=fake_run_adb):
+        assert dev.start_app("com.netease.my") is True
+    assert calls.count("monkey") == 0, "inconclusive dumpsys must not fire the monkey fallback"
+
+
+def test_adb_start_app_monkey_fallback_on_lost_focus():
+    """am start that does not take focus (launcher owns it) must fall back to monkey,
+    which then takes focus — the 2026-10-02 live failure."""
+    dev = AdbDevice(serial="mock_device:5555")
+    focused_launcher = "  mCurrentFocus=Window{d4d981a u0 app.lawnchair/app.lawnchair.LawnchairLauncher}\n"
+    focused_game = "  mCurrentFocus=Window{79aeef4 u0 com.netease.my/com.netease.game.MessiahNativeActivity}\n"
+    resolve = "priority=0\n  com.netease.my/com.netease.game.LauncherActivity\n"
+    dumpsys_calls = 0
+
+    def fake_run_adb(*args):
+        nonlocal dumpsys_calls
+        if args[0] == "cmd":
+            return resolve
+        if args[0] == "dumpsys":
+            dumpsys_calls += 1
+            return focused_launcher if dumpsys_calls == 1 else focused_game
+        return "ok\n"
+
+    with patch.object(dev._driver, "_run_adb", side_effect=fake_run_adb):
+        assert dev.start_app("com.netease.my") is True
+
+
+def test_promo_block_latch_set_after_sustained_ignore_and_cleared_by_classify():
+    """A promo that ignores BACK past the burst budget must latch promo_block_latch
+    (the run cannot report success) and stop pressing; classify clears the latch when
+    the promo overlay is gone so a later legitimate completion is not masked."""
+    device = DummyDevice()
+    ctx = PipelineContext(device=device)
+    act = NodeAction(type="custom", custom_func="dismiss_popups")
+    promo = [
+        DummyOCRItem("每日新发现", (700.0, 300.0)),
+        DummyOCRItem("领取", (1184.0, 497.0)),
+    ]
+    for _ in range(dh.PROMO_BLOCK_STREAK + 1):
+        ctx.variables["_last_frame_items"] = promo
+        with patch("plugins.mhxy_mobile.custom.daily_handlers.time.sleep"):
+            dh.dismiss_popups(ctx, act)
+    # burst budget 8 pressed BACK once each; past it, no more key presses
+    assert len(device.keys) == 8
+    assert ctx.variables["promo_block_latch"] is True
+
+    ctx.variables["promo_back_streak"] = 21
+    items = [DummyOCRItem("活动", (352.0, 63.0))]
+    with patch.object(dh, "_ocr_items", return_value=items):
+        dh.classify_screen(ctx, None)
+    assert "promo_block_latch" not in ctx.variables
+    assert "promo_back_streak" not in ctx.variables
+
+
 def test_dialog_claim_streak_degrades_to_back_after_3():
     device = DummyDevice()
     ctx = PipelineContext(device=device)

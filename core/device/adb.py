@@ -506,12 +506,30 @@ class AdbDevice(BaseDevice):
                     self._driver._run_adb("am", "start", "-n", act_lines[0])
                 else:
                     self._driver._run_adb("monkey", "-p", package_name, "-c", "android.intent.category.LAUNCHER", "1")
+
+            def _verified_focus() -> Optional[bool]:
+                res = self._owns_foreground(package_name)
+                if res is None:  # dumpsys hiccup — retry once before any verdict
+                    time.sleep(1.0)
+                    res = self._owns_foreground(package_name)
+                return res
+
             time.sleep(2.0)
-            if self.is_foreground_app(package_name):
+            focus = _verified_focus()
+            if focus is True:
+                return True
+            if focus is None:
+                # Cannot verify even after a retry — fail open rather than burn a
+                # foreground-guard restart streak on an inconclusive dumpsys.
+                logger.warning(f"Cannot verify foreground after starting [{package_name}]; failing open")
                 return True
             self._driver._run_adb("monkey", "-p", package_name, "-c", "android.intent.category.LAUNCHER", "1")
             time.sleep(2.0)
-            return self.is_foreground_app(package_name)
+            focus = _verified_focus()
+            if focus is None:
+                logger.warning(f"Cannot verify foreground after monkey fallback for [{package_name}]; failing open")
+                return True
+            return focus
         except Exception as e:
             logger.error(f"Failed to start app [{package_name}]: {e}")
             return False
@@ -533,6 +551,23 @@ class AdbDevice(BaseDevice):
         except Exception:
             return False
 
+    def _dumpsys_focus_line(self) -> Optional[str]:
+        """The mCurrentFocus/mFocusedApp line, or None when dumpsys failed.
+
+        ``_run_adb`` returns "" on any exec failure, which is distinct from a
+        real dumpsys with no focus line: callers must treat None (exec failed)
+        as inconclusive rather than as a verdict about the foreground.
+        """
+        out = self._driver._run_adb("dumpsys", "window")
+        if not out.strip():
+            logger.warning("dumpsys window returned empty output — inconclusive")
+            return None
+        for line in out.splitlines():
+            line = line.strip()
+            if line.startswith("mCurrentFocus") or line.startswith("mFocusedApp"):
+                return line
+        return ""
+
     def is_foreground_app(self, package_name: str) -> bool:
         """True when package_name owns the focused window.
 
@@ -542,9 +577,20 @@ class AdbDevice(BaseDevice):
         the focus line cannot be parsed so foreground guards never block a run
         on a transient dumpsys hiccup.
         """
-        out = self._driver._run_adb("dumpsys", "window")
-        for line in out.splitlines():
-            line = line.strip()
-            if line.startswith("mCurrentFocus") or line.startswith("mFocusedApp"):
-                return package_name in line
-        return True
+        line = self._dumpsys_focus_line()
+        if line is None or line == "":
+            return True
+        return package_name in line
+
+    def _owns_foreground(self, package_name: str) -> Optional[bool]:
+        """Foreground verdict with an explicit inconclusive state.
+
+        True/False = the focused-window line was parsed and names (or does not
+        name) package_name; None = dumpsys failed, no verdict available. Used
+        by start_app so a dumpsys hiccup neither lies about success (old pidof
+        behavior) nor burns a foreground-guard restart streak.
+        """
+        line = self._dumpsys_focus_line()
+        if line is None or line == "":
+            return None
+        return package_name in line
