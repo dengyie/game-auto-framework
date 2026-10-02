@@ -376,6 +376,81 @@ def test_supervisor_reconnect_disconnected_device():
     assert inst.device.is_connected() is True
 
 
+class MockIdleProbeDevice(VirtualDevice):
+    """Virtual device mirroring AdbDevice.probe() semantics for idle liveness tests."""
+
+    def __init__(self, name: str = "mock_idle_probe_dev") -> None:
+        super().__init__(name=name)
+        self.probe_calls = 0
+        self.probe_result = True
+
+    def probe(self) -> bool:
+        self.probe_calls += 1
+        if not self.probe_result:
+            self._connected = False
+        return self.probe_result
+
+
+def test_supervisor_idle_probe_detects_silent_drop_and_reconnects():
+    """A device that dies while its instance is idle must be discovered by the
+    low-frequency liveness probe and handed to the normal reconnect path."""
+    pool = InstancePool()
+    inst = pool.register_instance("idle_inst", device_type="virtual")
+    inst.connect()
+    dev = MockIdleProbeDevice()
+    dev.connect()
+    inst.device = dev
+
+    supervisor = ClusterSupervisor(
+        instance_pool=pool,
+        config=SupervisorConfig(enable_webhook_alerts=False),
+    )
+
+    # First pass: probe fires (no prior timestamp) and reports healthy.
+    supervisor.check_once()
+    assert dev.probe_calls == 1
+    assert inst.device.is_connected() is True
+
+    # Device dies silently while idle; the next probe discovers the drop and
+    # section-1 reconnect logic restores the instance within the same pass.
+    dev.probe_result = False
+    supervisor._last_idle_probe["idle_inst"] = 0.0  # force probe interval elapsed
+    res = supervisor.check_once()
+    assert dev.probe_calls == 2
+    assert "idle_inst" in res["reconnected_instances"]
+    assert inst.device.is_connected() is True
+
+
+def test_supervisor_idle_probe_respects_interval():
+    """The idle liveness probe must be throttled to once per idle_probe_interval_sec."""
+    pool = InstancePool()
+    inst = pool.register_instance("idle_throttle_inst", device_type="virtual")
+    inst.connect()
+    dev = MockIdleProbeDevice()
+    dev.connect()
+    inst.device = dev
+
+    supervisor = ClusterSupervisor(
+        instance_pool=pool,
+        config=SupervisorConfig(enable_webhook_alerts=False, idle_probe_interval_sec=3600.0),
+    )
+    supervisor.check_once()
+    assert dev.probe_calls == 1
+    supervisor.check_once()
+    assert dev.probe_calls == 1  # interval not elapsed -> throttled
+
+
+def test_supervisor_forget_instance_clears_idle_probe_timestamp():
+    """forget_instance must drop idle-probe bookkeeping so a re-registered id probes fresh."""
+    supervisor = ClusterSupervisor(
+        instance_pool=InstancePool(),
+        config=SupervisorConfig(enable_webhook_alerts=False),
+    )
+    supervisor._last_idle_probe["gone_inst"] = 123.0
+    supervisor.forget_instance("gone_inst")
+    assert "gone_inst" not in supervisor._last_idle_probe
+
+
 def test_supervisor_error_edge_alert_fires_once_then_probe_self_heals():
     """Verify severe-disconnect alert is edge-triggered (ONCE) and low-frequency probe self-heals."""
     from unittest.mock import MagicMock

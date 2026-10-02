@@ -52,6 +52,16 @@ class BaseDevice(abc.ABC):
     def is_connected(self) -> bool:
         return self._connected
 
+    def probe(self) -> bool:
+        """Lightweight liveness check; default trusts the cached connection flag.
+
+        The cached flag only flips when an operation on this device fails, so a
+        device that dies while its instance sits idle is otherwise invisible to
+        the watchdog until the next task touches it. Subclasses backed by an
+        external process (ADB) should override with a cheap real check.
+        """
+        return self._connected
+
     @abc.abstractmethod
     def screencap(self) -> bytes:
         """

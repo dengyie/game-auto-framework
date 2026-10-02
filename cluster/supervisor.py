@@ -28,6 +28,10 @@ class SupervisorConfig(BaseModel):
         default=60.0,
         description="Low-frequency connect probe interval (s) after an instance enters ERROR, enabling unattended self-healing",
     )
+    idle_probe_interval_sec: float = Field(
+        default=300.0,
+        description="Low-frequency liveness probe interval (s) for idle instances, so a device that dies silently (cloud phone off, tunnel down) is discovered without waiting for the next task",
+    )
     max_app_restarts: int = Field(default=3, description="Max client process restarts per instance")
     enable_app_watchdog: bool = Field(default=True, description="Detect and auto-restart crashed game processes")
     target_package: str = Field(default="com.netease.my", description="Monitored game package name")
@@ -68,6 +72,7 @@ class ClusterSupervisor:
         # transition into ERROR (not on every 5s poll), enabling low-frequency self-heal.
         self._error_alerted: Dict[str, bool] = {}
         self._last_error_probe: Dict[str, float] = {}
+        self._last_idle_probe: Dict[str, float] = {}
 
         self.running: bool = False
         self._stop_event = threading.Event()
@@ -168,6 +173,25 @@ class ClusterSupervisor:
 
             for inst in instances:
                 inst_id = inst.instance_id
+
+                # 0. Idle-instance liveness probe: the cached is_connected() flag only
+                # flips when an operation on the device fails, so a device that dies
+                # while the instance sits idle (cloud phone powered off, tunnel down)
+                # is invisible to check 1 below. Probe cheaply at a low frequency;
+                # a failed probe flips the device flag so the normal reconnect path
+                # (burst retries -> ERROR latch -> low-frequency self-heal) takes over.
+                if (
+                    inst.status == InstanceStatus.IDLE
+                    and inst.device is not None
+                    and inst.device.is_connected()
+                ):
+                    if (now - self._last_idle_probe.get(inst_id, 0.0)) >= self.config.idle_probe_interval_sec:
+                        self._last_idle_probe[inst_id] = now
+                        if not inst.device.probe():
+                            logger.warning(
+                                f"Supervisor: Instance [{inst_id}] idle device is unreachable "
+                                f"(silent drop detected); handing over to reconnect logic."
+                            )
 
                 # 1. Device Connection Inspection & Auto-Reconnect
                 if not inst.device or not inst.device.is_connected() or inst.status == InstanceStatus.DISCONNECTED:
@@ -369,6 +393,7 @@ class ClusterSupervisor:
             self.app_restart_counts.pop(instance_id, None)
             self._error_alerted.pop(instance_id, None)
             self._last_error_probe.pop(instance_id, None)
+            self._last_idle_probe.pop(instance_id, None)
             # Drop any alert-cooldown bearing this instance id (down/recovery/crash/broker
             # titles all embed "[{instance_id}]"), otherwise a re-registered id inherits a
             # live cooldown and its first real alert gets silently swallowed.

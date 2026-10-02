@@ -221,6 +221,41 @@ class AdbDevice(BaseDevice):
         self._connected = False
         return False
 
+    def probe(self) -> bool:
+        """Lightweight liveness check for idle instances.
+
+        ``_connected`` only flips when an adb operation on this device fails,
+        so a device that dies while its instance is idle (cloud phone powered
+        off, tunnel down) is invisible to the watchdog until the next task.
+        Re-uses the ``adb devices`` 'device'-state parse that ``connect()``
+        treats as the sole source of truth; any state other than ``device``
+        (offline/unauthorized/absent) flips the cached flag off so the
+        supervisor's reconnect path picks the instance up.
+        """
+        if not self._connected:
+            return False
+        try:
+            res = subprocess.run(
+                ["adb", "devices"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=5,
+            )
+            out_str = res.stdout.decode("utf-8", errors="ignore")
+            for line in out_str.splitlines():
+                parts = line.strip().split()
+                if len(parts) >= 2 and parts[0] == self.serial:
+                    if parts[1] == "device":
+                        return True
+                    logger.warning(
+                        f"ADB liveness probe: [{self.serial}] reported state '{parts[1]}'"
+                    )
+                    break
+        except Exception as e:
+            logger.warning(f"ADB liveness probe failed for [{self.serial}]: {e}")
+        self._connected = False
+        return False
+
     def _probe_device_specs(self) -> None:
         """Probe the input viewport. Prefer dumpsys viewport over wm size.
 
