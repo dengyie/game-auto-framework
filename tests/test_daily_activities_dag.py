@@ -2017,6 +2017,33 @@ def test_turnin_with_bag_full_and_item_not_owned_degrades_task():
     assert device.clicks == [], "never click 上交 into the shop-refuse loop"
     assert device.keys == [4], "close the turn-in dialog so the panel can move on"
     assert ctx.variables["current_task_done"] is True
+    assert "turnin_bag_block_route" not in ctx.variables
+
+
+def test_turnin_tracker_hud_latches_routing_override_after_3_degrades():
+    """The 拥有0/1 line lives on the persistent quest-tracker HUD that BACK cannot
+    dismiss (live 2026-10-03 run 4: turnin_open stayed True forever). After 3
+    consecutive degrades the routing override must latch so classify stops treating
+    the HUD as blocking work."""
+    device = DummyDevice()
+    ctx = PipelineContext(device=device)
+    ctx.variables["shop_blocked_bag_full"] = True
+    items = [
+        DummyOCRItem("相（拥有0/1），上交不低", (1146.0, 365.0)),
+        DummyOCRItem("师门-阴晴圆缺(7/10)", (1150.0, 195.0)),
+    ]
+    act = NodeAction(type="custom", custom_func="click_turnin")
+    for i in range(3):
+        ctx.variables["_last_frame_items"] = items
+        dh.click_turnin(ctx, act)
+    assert ctx.variables["turnin_bag_block_route"] is True
+    assert ctx.variables["current_task_done"] is True
+
+    # classify: with the override latched, the tracker HUD no longer counts as
+    # active work -> need_open_panel fires so the panel can dispatch the next task.
+    with patch.object(dh, "_ocr_items", return_value=items):
+        dh.classify_screen(ctx, None)
+    assert ctx.variables["need_open_panel"] is True
 
 
 def test_turnin_with_bag_full_but_item_owned_still_clicks():

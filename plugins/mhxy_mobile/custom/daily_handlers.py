@@ -819,7 +819,7 @@ def classify_screen(ctx: PipelineContext, frame: Any, rec: NodeRecognition = Non
     # Determine if we need to open the activity panel:
     has_active_work = (
         v["in_battle"] or v["popup_open"] or v["shimen_board_open"]
-        or v["shop_open"] or v["turnin_open"] or v["deposit_open"]
+        or v["shop_open"] or (v["turnin_open"] and not v.get("turnin_bag_block_route")) or v["deposit_open"]
         or v["dialog_open"] or v["use_item_open"] or v["auto_walking"]
         or v["quiz_open"] or v["escort_traveling"]
         or (v["tracker_active"] and not v.get("current_task_done"))
@@ -1228,6 +1228,12 @@ def handle_activity_panel(ctx: PipelineContext, act: NodeAction) -> None:
                 "complete); skipping for this run. Clean the bag and re-run."
             )
             continue
+
+        # Any queued task reaching dispatch means the panel is open again: drop the
+        # turnin routing override so a later genuine turn-in dialog routes normally.
+        if ctx.variables.pop("turnin_bag_block_route", None):
+            ctx.variables.pop("turnin_bag_block_streak", None)
+            logger.info("[daily_panel] turnin_bag_block_route cleared at dispatch")
 
         if card and not card["is_done"] and not card["join_btn"] and "开启" not in card["card_text"]:
             logger.warning(
@@ -1652,10 +1658,23 @@ def click_turnin(ctx: PipelineContext, act: NodeAction) -> None:
     if ctx.variables.get("shop_blocked_bag_full") and any(
         kw in getattr(it, "text", "") for it in items for kw in ("拥有0/", "（拥有0", "(拥有0")
     ):
+        # The 拥有0/1 line usually lives on the persistent quest-tracker HUD, which a
+        # single BACK cannot dismiss — turnin_open would stay True and the DAG would
+        # bounce between turnin_item and dismiss_popups forever (live 2026-10-03 run 4).
+        # After 3 consecutive degrades, latch a routing override that turns the
+        # tracker HUD blind (classify) so need_open_panel can fire; the daily-panel
+        # dispatch clears it when it next runs and skips 宝图 for this run.
+        streak = int(ctx.variables.get("turnin_bag_block_streak", 0)) + 1
+        ctx.variables["turnin_bag_block_streak"] = streak
         logger.warning(
-            "[turnin] Bag full and the required item is not owned (拥有0/) — the purchase "
-            "that would produce it is blocked; closing the dialog and degrading the task"
+            f"[turnin] Bag full and the required item is not owned (拥有0/) — the purchase "
+            f"that would produce it is blocked; closing the dialog and degrading the task "
+            f"(streak {streak})"
         )
+        if streak >= 3:
+            ctx.variables["turnin_bag_block_route"] = True
+            ctx.variables["current_task_done"] = True
+            return
         if ctx.device is not None and hasattr(ctx.device, "press_key"):
             ctx.device.press_key(4)  # close the turn-in dialog so the panel can dispatch the next task
             time.sleep(1.2)
