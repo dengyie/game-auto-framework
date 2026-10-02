@@ -2015,6 +2015,7 @@ def test_turnin_with_bag_full_and_item_not_owned_degrades_task():
     ]
     dh.click_turnin(ctx, NodeAction(type="custom", custom_func="click_turnin"))
     assert device.clicks == [], "never click 上交 into the shop-refuse loop"
+    assert device.keys == [4], "close the turn-in dialog so the panel can move on"
     assert ctx.variables["current_task_done"] is True
 
 

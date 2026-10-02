@@ -1654,8 +1654,11 @@ def click_turnin(ctx: PipelineContext, act: NodeAction) -> None:
     ):
         logger.warning(
             "[turnin] Bag full and the required item is not owned (拥有0/) — the purchase "
-            "that would produce it is blocked; degrading the current task"
+            "that would produce it is blocked; closing the dialog and degrading the task"
         )
+        if ctx.device is not None and hasattr(ctx.device, "press_key"):
+            ctx.device.press_key(4)  # close the turn-in dialog so the panel can dispatch the next task
+            time.sleep(1.2)
         ctx.variables["current_task_done"] = True
         return
     if turnin_btn is not None:
