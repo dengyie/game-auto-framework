@@ -5,7 +5,9 @@ Systemd service units, Nginx configuration, and shell scripts.
 """
 
 from pathlib import Path
+import os
 import stat
+import subprocess
 import pytest
 import yaml
 
@@ -92,8 +94,17 @@ def test_install_script_permissions():
     install_script = DEPLOY_DIR / "install.sh"
     assert install_script.exists()
 
-    file_stat = install_script.stat()
-    assert bool(file_stat.st_mode & stat.S_IXUSR), "install.sh must be executable"
+    # NTFS/Windows checkouts do not carry the POSIX exec bit; the durable
+    # source of truth is the git index mode (100755), which is platform-neutral.
+    if os.name == "nt":
+        git_mode = subprocess.run(
+            ["git", "ls-files", "--stage", str(install_script.relative_to(PROJECT_ROOT))],
+            cwd=PROJECT_ROOT, capture_output=True, text=True, check=True,
+        ).stdout.split()
+        assert git_mode and git_mode[0] == "100755", "install.sh must be committed with exec bit"
+    else:
+        file_stat = install_script.stat()
+        assert bool(file_stat.st_mode & stat.S_IXUSR), "install.sh must be executable"
 
     content = install_script.read_text(encoding="utf-8")
     assert "docker)" in content
