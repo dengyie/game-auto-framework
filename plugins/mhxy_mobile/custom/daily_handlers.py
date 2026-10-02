@@ -658,6 +658,7 @@ def classify_screen(ctx: PipelineContext, frame: Any, rec: NodeRecognition = Non
             "青丘奇珍", "灵狐栖梦", "时空之隙", "巅峰联赛", "点击任意地方继续", "正在火热进行中",
             "每日新发现", "上线领全武将", "首发，可以逛", "可以逛的武侠", "邀你战三界", "共渡灵妖劫", "共遮灵妖劫",
             "中秋华诞", "双节同庆",
+            "当前最高层数",
         )
     )
     v["fashion_showroom"] = fashion_showroom
