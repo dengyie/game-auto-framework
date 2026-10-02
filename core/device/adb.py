@@ -486,21 +486,32 @@ class AdbDevice(BaseDevice):
             return False
 
     def start_app(self, package_name: str, activity: Optional[str] = None) -> bool:
-        """Start an application via resolve-activity + am start, or monkey fallback."""
+        """Start an application and confirm it owns the foreground.
+
+        pidof alone lies here: a backgrounded/mini-window process (MuMu 12)
+        keeps the pid alive while another app owns the focus (live 2026-10-02:
+        am start on the resolve-activity alias left com.mumu.store in front and
+        the caller still saw success). So success is the focused-window check;
+        when am start does not take focus (dead alias, lost race), fall back to
+        the monkey LAUNCHER intent, which reliably foregrounds the app.
+        """
         try:
             if activity:
                 target = f"{package_name}/{activity}"
-                out = self._driver._run_adb("am", "start", "-n", target)
+                self._driver._run_adb("am", "start", "-n", target)
             else:
                 resolve_out = self._driver._run_adb("cmd", "package", "resolve-activity", "--brief", package_name)
                 act_lines = [l.strip() for l in resolve_out.splitlines() if "/" in l and not l.startswith("priority=")]
                 if act_lines:
-                    target = act_lines[0]
-                    out = self._driver._run_adb("am", "start", "-n", target)
+                    self._driver._run_adb("am", "start", "-n", act_lines[0])
                 else:
-                    out = self._driver._run_adb("monkey", "-p", package_name, "-c", "android.intent.category.LAUNCHER", "1")
-            time.sleep(0.5)
-            return self.is_app_running(package_name) or "starting" in out.lower() or "events injected: 1" in out.lower()
+                    self._driver._run_adb("monkey", "-p", package_name, "-c", "android.intent.category.LAUNCHER", "1")
+            time.sleep(2.0)
+            if self.is_foreground_app(package_name):
+                return True
+            self._driver._run_adb("monkey", "-p", package_name, "-c", "android.intent.category.LAUNCHER", "1")
+            time.sleep(2.0)
+            return self.is_foreground_app(package_name)
         except Exception as e:
             logger.error(f"Failed to start app [{package_name}]: {e}")
             return False
