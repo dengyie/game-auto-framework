@@ -300,6 +300,68 @@ def test_handle_quiz_miss_without_header_refuses_blind_click():
     assert device.clicks == []
 
 
+def test_handle_quiz_refusal_streak_presses_back_to_escape():
+    """2026-10-02 live: the 中秋华诞·双节同庆 banner persistently re-classified as
+    quiz_open, and the no-header refusal path just waited — the sense<->quiz_answer
+    oscillation produced no clicks, so neither the same-coord watchdog nor the stall
+    watchdog could fire (animated banner = changing frames). After 5 consecutive
+    refusals the handler must press BACK once (bounded loop, streak reset) to clear
+    the overlay layer."""
+    device = DummyDevice()
+    ctx = _ctx_with(device)
+    items = [
+        DummyOCRItem("中秋华诞·双节同庆", (700.0, 95.0)),
+        DummyOCRItem("甲选项", (500.0, 300.0)),
+        DummyOCRItem("乙选项", (800.0, 300.0)),
+    ]
+    with patch.object(dh, "_ocr_items", return_value=items):
+        dh.classify_screen(ctx, None)
+    action = NodeAction(type="custom", custom_func="handle_quiz")
+    for _ in range(4):
+        dh.handle_quiz(ctx, action)
+    assert device.keys == []  # still inside the bounded waiting window
+    dh.handle_quiz(ctx, action)  # 5th refusal -> one BACK
+    assert device.keys == [4]
+    assert ctx.variables["quiz_refusal_streak"] == 0  # streak reset re-arms the loop
+    dh.handle_quiz(ctx, action)  # next cycle waits again before any further BACK
+    assert device.keys == [4]
+
+
+def test_classify_screen_clears_quiz_refusal_streak_when_not_quiz():
+    """A refusal streak only means something while the same misparsed screen persists."""
+    device = DummyDevice()
+    ctx = _ctx_with(device)
+    ctx.variables["quiz_refusal_streak"] = 4
+    items = [
+        DummyOCRItem("师门任务", (900.0, 450.0)),
+        DummyOCRItem("跳过", (900.0, 520.0)),
+    ]
+    with patch.object(dh, "_ocr_items", return_value=items):
+        dh.classify_screen(ctx, None)
+    assert ctx.variables["quiz_open"] is False
+    assert "quiz_refusal_streak" not in ctx.variables
+
+
+def test_classify_screen_vetos_holiday_banner_quiz():
+    """2026-10-02 live: the 中秋华诞·双节同庆 holiday banner reached the quiz router —
+    banner_noise must veto it like 青丘奇珍 before it."""
+    ctx = _ctx_with()
+    city_items = [
+        DummyOCRItem("指引", (270.0, 63.0)),
+        DummyOCRItem("活动", (352.0, 63.0)),
+        DummyOCRItem("排行", (430.0, 63.0)),
+        DummyOCRItem("挂机", (505.0, 63.0)),
+        DummyOCRItem("社群", (580.0, 63.0)),
+        DummyOCRItem("直播录像", (660.0, 63.0)),
+        DummyOCRItem("中秋华诞·双节同庆", (700.0, 100.0)),
+        DummyOCRItem("路人甲", (500.0, 300.0)),
+        DummyOCRItem("路人乙", (760.0, 330.0)),
+    ]
+    with patch.object(dh, "_ocr_items", return_value=city_items):
+        dh.classify_screen(ctx, None)
+    assert ctx.variables["quiz_open"] is False
+
+
 def test_handle_quiz_done_screen_presses_back():
     device = DummyDevice()
     ctx = _ctx_with(device)

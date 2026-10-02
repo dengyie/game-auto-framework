@@ -657,6 +657,7 @@ def classify_screen(ctx: PipelineContext, frame: Any, rec: NodeRecognition = Non
         for kw in (
             "青丘奇珍", "灵狐栖梦", "时空之隙", "巅峰联赛", "点击任意地方继续", "正在火热进行中",
             "每日新发现", "上线领全武将", "首发，可以逛", "可以逛的武侠", "邀你战三界", "共渡灵妖劫", "共遮灵妖劫",
+            "中秋华诞", "双节同庆",
         )
     )
     v["fashion_showroom"] = fashion_showroom
@@ -804,6 +805,12 @@ def classify_screen(ctx: PipelineContext, frame: Any, rec: NodeRecognition = Non
     # not penalized by the residue of a dead one.
     if not v["dialog_open"] and "dialog_claim_streak" in ctx.variables:
         ctx.variables.pop("dialog_claim_streak", None)
+
+    # Same idea for the quiz bank-miss refusal streak: it only means something while
+    # the same misparsed "quiz" screen persists; a fresh quiz_open (real quiz window,
+    # banner gone) must start from zero.
+    if not v["quiz_open"] and "quiz_refusal_streak" in ctx.variables:
+        ctx.variables.pop("quiz_refusal_streak", None)
 
     # Same-coordinate-repeat watchdog (see _click): battle or an open activity panel is
     # unambiguous progress, so a repeat streak carried over from a prior dead screen is
@@ -2469,11 +2476,26 @@ def handle_quiz(ctx: PipelineContext, act: NodeAction) -> None:
         lambda it: any(kw in it.text for kw in ("三界奇缘", "科举", "答题", "请作答")) and it.center[1] < 250,
     ))
     if not quiz_header_present:
+        refusal_streak = int(ctx.variables.get("quiz_refusal_streak", 0)) + 1
+        ctx.variables["quiz_refusal_streak"] = refusal_streak
         logger.warning(
             f"[quiz] Bank miss for '{question[:40]}' and no quiz header on screen — "
             f"refusing first-option blind click, waiting"
         )
-        time.sleep(1.0)
+        if refusal_streak >= 5:
+            # The same misparsed banner/HUD keeps re-classifying as quiz_open and the
+            # wait path issues no clicks, so neither the same-coord watchdog nor the
+            # stall watchdog can fire (an animated banner keeps frames changing).
+            # One BACK clears the overlay layer; resetting the streak re-arms a
+            # bounded "5 refusals -> one BACK" loop (八修 counter semantics). A single
+            # BACK never raises the exit confirm, which the framework never confirms.
+            ctx.variables["quiz_refusal_streak"] = 0
+            logger.warning("[quiz] Refusal streak >= 5 — pressing BACK once to clear the overlay layer")
+            if ctx.device is not None and hasattr(ctx.device, "press_key"):
+                ctx.device.press_key(4)
+            time.sleep(1.5)
+        else:
+            time.sleep(1.0)
         return
     logger.warning(f"[quiz] Bank miss for '{question[:40]}', clicking first option (upstream policy)")
     _click(ctx, option_items[0].center[0], option_items[0].center[1])
