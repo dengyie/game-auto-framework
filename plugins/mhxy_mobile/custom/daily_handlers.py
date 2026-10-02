@@ -784,7 +784,20 @@ def classify_screen(ctx: PipelineContext, frame: Any, rec: NodeRecognition = Non
     )
     v["promo_carousel"] = promo_carousel
 
-    v["popup_open"] = bool(v["xianyu_cost_popup"]) or bool(v["quit_game_confirm"]) or bool(v["guide_popup"]) or bool(v.get("gacha_page")) or bool(v["fullscreen_popup"]) or bool(paywall) or bool(guild_recruit) or bool(jianhui_popup) or bool(has_blocking_promo) or bool(has_subwindow) or bool(v.get("fashion_showroom")) or bool(v.get("sect_goal_window")) or bool(promo_carousel) or ((not is_functional_window) and (
+    # Chat compose bar focused (world chat input): occludes the whole HUD and its
+    # 确定 would SEND a chat message (live 2026-10-02: a walk-out/relaunch left the
+    # composer up, popup_open stayed False and the runner blind-tapped 活动 through
+    # the input bar until the same-coord watchdog fired). The input placeholder, or
+    # the 发送+取消+确定 system row together, is the signature — chat panels with
+    # history only never show it.
+    chat_input_open = any("点击这里输入" in t for t in texts) or (
+        any("发送" in t for t in texts)
+        and any(t.replace(" ", "") == "取消" for t in texts)
+        and any(t.replace(" ", "") == "确定" for t in texts)
+    )
+    v["chat_input_open"] = chat_input_open
+
+    v["popup_open"] = bool(v["xianyu_cost_popup"]) or bool(v["quit_game_confirm"]) or bool(v["guide_popup"]) or bool(v.get("gacha_page")) or bool(v["fullscreen_popup"]) or bool(paywall) or bool(guild_recruit) or bool(jianhui_popup) or bool(has_blocking_promo) or bool(has_subwindow) or bool(v.get("fashion_showroom")) or bool(v.get("sect_goal_window")) or bool(promo_carousel) or bool(chat_input_open) or ((not is_functional_window) and (
         any(c[0] > 1050 and c[1] < 120 and t.strip() in ("×", "X", "x", "✕") for t, c in zip(texts, centers))
         or any(any(kw in t.strip() for kw in ("确认关闭", "点击空白处", "点击屏幕", "轻触屏幕", "满月如璧", "我知道了")) for t in texts)
         or any(t.strip() in ("×", "X", "x", "✕") and 600 < c[0] < 1250 and c[1] < 250 for t, c in zip(texts, centers) if not v["shop_open"])
@@ -2039,6 +2052,22 @@ def dismiss_popups(ctx: PipelineContext, act: NodeAction) -> None:
             if ctx.device is not None and hasattr(ctx.device, "press_key"):
                 ctx.device.press_key(4)
         time.sleep(1.5)
+        return
+
+    # Chat composer focused (world chat input): occludes the whole HUD and its 确定
+    # would SEND a chat message — close via the system 取消 (top-right; at 1600x900
+    # it sits at x≈1479, so the legacy x<1210 baseline bound must not apply here),
+    # never 确定/发送. Fallback: one BACK drops the IME.
+    if ctx.variables.get("chat_input_open") or any("点击这里输入" in getattr(it, "text", "") for it in items):
+        cancel = _find(items, lambda it: it.text.replace(" ", "") == "取消" and it.center[1] < 80)
+        if cancel is not None:
+            x, y = _center(cancel)
+            logger.warning(f"[dismiss_popups] Chat composer open; clicking 取消 at ({x:.0f}, {y:.0f}) — NEVER 确定/发送")
+            _click(ctx, x, y)
+        elif ctx.device is not None and hasattr(ctx.device, "press_key"):
+            logger.warning("[dismiss_popups] Chat composer open; 取消 not parsed — pressing BACK to drop the IME")
+            ctx.device.press_key(4)
+        time.sleep(1.2)
         return
 
     # Safety second: a dialog offering to spend 仙玉 (秘境 death revive / continue) must

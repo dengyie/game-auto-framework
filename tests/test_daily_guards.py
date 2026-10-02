@@ -283,6 +283,51 @@ def test_classify_screen_clears_promo_back_streak_when_no_popup():
     assert "promo_back_streak" not in ctx.variables
 
 
+# --- chat composer guard (2026-10-02 live: a walk-out/relaunch left the compose
+# bar focused; popup_open stayed False and the runner blind-tapped 活动 through
+# the input bar until the same-coord watchdog fired) ----------------------------
+
+def _composer_items():
+    return [
+        DummyOCRItem("点击这里输入", (700.0, 30.0)),
+        DummyOCRItem("发送", (640.0, 85.0)),
+        DummyOCRItem("取消", (1479.0, 30.0)),
+        DummyOCRItem("确定", (1560.0, 30.0)),
+        DummyOCRItem("世界", (75.0, 240.0)),
+    ]
+
+
+def test_classify_screen_routes_chat_composer_to_popup():
+    ctx = PipelineContext(device=DummyDevice())
+    with patch.object(dh, "_ocr_items", return_value=_composer_items()):
+        dh.classify_screen(ctx, None)
+    v = ctx.variables
+    assert v["chat_input_open"] is True
+    assert v["popup_open"] is True, "composer must route sense -> dismiss_popups"
+
+
+def test_chat_composer_closes_via_cancel_never_confirm():
+    device = DummyDevice()
+    ctx = PipelineContext(device=device)
+    ctx.variables["_last_frame_items"] = _composer_items()
+    ctx.variables["chat_input_open"] = True
+    dh.dismiss_popups(ctx, NodeAction(type="custom", custom_func="dismiss_popups"))
+    assert device.clicks == [(1479.0, 30.0)], "close via the system 取消 — never 确定/发送"
+    assert device.keys == []
+
+
+def test_chat_composer_without_parsed_cancel_presses_back():
+    device = DummyDevice()
+    ctx = PipelineContext(device=device)
+    ctx.variables["_last_frame_items"] = [
+        DummyOCRItem("点击这里输入", (700.0, 30.0)),
+        DummyOCRItem("发送", (640.0, 85.0)),
+    ]
+    dh.dismiss_popups(ctx, NodeAction(type="custom", custom_func="dismiss_popups"))
+    assert device.clicks == []
+    assert device.keys == [4]
+
+
 # --- runner foreground guard ---------------------------------------------------
 
 class _FgDevice:
