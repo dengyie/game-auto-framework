@@ -2044,6 +2044,7 @@ def test_turnin_tracker_hud_latches_routing_override_after_3_degrades():
     with patch.object(dh, "_ocr_items", return_value=items):
         dh.classify_screen(ctx, None)
     assert ctx.variables["need_open_panel"] is True
+    assert ctx.variables["turnin_open"] is False, "latched HUD must not route turnin_item before need_open_panel"
 
 
 def test_turnin_with_bag_full_but_item_owned_still_clicks():
@@ -2060,10 +2061,11 @@ def test_turnin_with_bag_full_but_item_owned_still_clicks():
     assert device.clicks == [(880.0, 520.0)]
 
 
-def test_bag_full_gate_skips_shimen_and_baotu_dispatch():
-    """The daily panel must not dispatch purchase-dependent tasks while the bag is
-    full — and must NOT append them to completed_tasks, so a same-day re-run after
-    bag cleanup still picks them up."""
+def test_bag_full_gate_skips_shimen_but_allows_baotu_dig():
+    """While the bag is full, 师门任务 (its purchase subtask cannot complete) is
+    gated and must NOT be appended to completed_tasks — but 宝图任务 stays
+    dispatchable: its dig flow consumes the maps already in the bag, freeing bag
+    slots (user directive 2026-10-03: 背包满了就把藏宝图挖完)."""
     device = DummyDevice()
     ctx = PipelineContext(device=device)
     ctx.variables["daily_queue"] = ["师门任务", "宝图任务"]
@@ -2077,4 +2079,5 @@ def test_bag_full_gate_skips_shimen_and_baotu_dispatch():
     ]
     ctx.variables["_last_frame_items"] = items
     dh.handle_activity_panel(ctx, NodeAction(type="custom", custom_func="handle_activity_panel"))
-    assert ctx.variables["completed_tasks"] == [], "gated tasks must not be marked complete"
+    assert "师门任务" not in ctx.variables["completed_tasks"], "gated task must not be marked complete"
+    assert ctx.variables.get("daily_rows_aligned") is True, "宝图 must stay dispatchable so the dig flow runs"

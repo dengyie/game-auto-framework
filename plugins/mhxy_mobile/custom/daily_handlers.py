@@ -557,6 +557,12 @@ def classify_screen(ctx: PipelineContext, frame: Any, rec: NodeRecognition = Non
 
     # 5. Turn-in dialog (上交 or 给予)
     v["turnin_open"] = not v["in_battle"] and bool(_find(items, lambda it: any(kw in it.text for kw in ("上交", "给予", "上交任务")) and it.center[0] > 600 and it.center[1] > 350))
+    # Routing override latched (3 bag-block degrades): the tracker HUD's 上交
+    # line is no longer an actionable turn-in target — stop reporting it, or the
+    # DAG's turnin_open edge (checked before need_open_panel) bounces the runner
+    # back into turnin_item forever (live 2026-10-03 run 5: 200-tick loop).
+    if v["turnin_open"] and ctx.variables.get("turnin_bag_block_route"):
+        v["turnin_open"] = False
 
     # 6. Use item popup (使用) - floating, center, or quick-use right slot
     v["use_item_open"] = (not v["in_battle"] and not v["xianyu_cost_popup"] and not v["quit_game_confirm"]
@@ -1218,22 +1224,26 @@ def handle_activity_panel(ctx: PipelineContext, act: NodeAction) -> None:
             continue
 
         # Bag-full gate (背包空间不足 latched by classify): the 师门 purchase subtask
-        # and the 宝图 dig subtask both acquire items at the 商会, which a full bag
-        # can never accept. Skip dispatch WITHOUT appending to completed_tasks — a
-        # same-day re-run after bag cleanup must still pick them up (live 2026-10-03:
-        # tracker->shop / turnin->shop loops to TIMEOUT).
-        if task_name in ("师门任务", "宝图任务") and ctx.variables.get("shop_blocked_bag_full"):
+        # acquires 定神香 at the 商会, which a full bag can never accept. 宝图任务
+        # deliberately stays UNGATED: its dig flow consumes the maps already in the
+        # bag (no purchase needed), which frees bag slots and unblocks the game
+        # (user directive 2026-10-03: 背包满了就把藏宝图挖完). Skip dispatch WITHOUT
+        # appending to completed_tasks — a same-day re-run must still pick them up.
+        if task_name == "师门任务" and ctx.variables.get("shop_blocked_bag_full"):
             logger.warning(
                 f"[daily_panel] {task_name} gated by game (背包空间不足 — purchase subtask cannot "
                 "complete); skipping for this run. Clean the bag and re-run."
             )
             continue
 
-        # Any queued task reaching dispatch means the panel is open again: drop the
-        # turnin routing override so a later genuine turn-in dialog routes normally.
-        if ctx.variables.pop("turnin_bag_block_route", None):
+        # Any queued task reaching dispatch means the panel is open again. Drop the
+        # turnin routing override ONLY once the bag-block is gone: while the bag is
+        # full the tracker HUD's 上交 line would immediately re-latch the loop, so
+        # the override must survive dispatch (live 2026-10-03 run 5).
+        if ctx.variables.get("turnin_bag_block_route") and not ctx.variables.get("shop_blocked_bag_full"):
+            ctx.variables.pop("turnin_bag_block_route", None)
             ctx.variables.pop("turnin_bag_block_streak", None)
-            logger.info("[daily_panel] turnin_bag_block_route cleared at dispatch")
+            logger.info("[daily_panel] turnin_bag_block_route cleared at dispatch (bag no longer full)")
 
         if card and not card["is_done"] and not card["join_btn"] and "开启" not in card["card_text"]:
             logger.warning(
@@ -1265,6 +1275,8 @@ def handle_activity_panel(ctx: PipelineContext, act: NodeAction) -> None:
         for task_name in daily_queue:
             if task_name in completed_tasks or task_name not in DAILY_ROW_JOIN:
                 continue
+            if task_name == "师门任务" and ctx.variables.get("shop_blocked_bag_full"):
+                continue  # bag-full gate applies to the fixed-row fallback too
             card = cards_by_name.get(task_name)
             if card is None or card["is_done"]:
                 continue
