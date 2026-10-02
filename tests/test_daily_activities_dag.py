@@ -2000,3 +2000,53 @@ def test_stall_first_purchase_does_not_close_window():
     dh.click_shop_buy(ctx, NodeAction(type="custom", custom_func="click_shop_buy"))
     assert (1010.0, 656.0) in device.clicks
     assert device.keys == [], "must not close the stall before the overlay confirms"
+
+
+def test_turnin_with_bag_full_and_item_not_owned_degrades_task():
+    """宝图 上交（拥有0/1）-> shop -> bag-full refuse -> close -> turnin looped the
+    same-coord watchdog to TIMEOUT (live 2026-10-03): with the bag full and the
+    required item not owned, turn-in must degrade the task instead of clicking."""
+    device = DummyDevice()
+    ctx = PipelineContext(device=device)
+    ctx.variables["shop_blocked_bag_full"] = True
+    ctx.variables["_last_frame_items"] = [
+        DummyOCRItem("上交", (880.0, 520.0)),
+        DummyOCRItem("相（拥有0/1），上交不低", (1146.0, 365.0)),
+    ]
+    dh.click_turnin(ctx, NodeAction(type="custom", custom_func="click_turnin"))
+    assert device.clicks == [], "never click 上交 into the shop-refuse loop"
+    assert ctx.variables["current_task_done"] is True
+
+
+def test_turnin_with_bag_full_but_item_owned_still_clicks():
+    """An owned item (拥有1/1) hands in normally even with the bag full — only the
+    purchase-needed path degrades."""
+    device = DummyDevice()
+    ctx = PipelineContext(device=device)
+    ctx.variables["shop_blocked_bag_full"] = True
+    ctx.variables["_last_frame_items"] = [
+        DummyOCRItem("上交", (880.0, 520.0)),
+        DummyOCRItem("相（拥有1/1），上交不低", (1146.0, 365.0)),
+    ]
+    dh.click_turnin(ctx, NodeAction(type="custom", custom_func="click_turnin"))
+    assert device.clicks == [(880.0, 520.0)]
+
+
+def test_bag_full_gate_skips_shimen_and_baotu_dispatch():
+    """The daily panel must not dispatch purchase-dependent tasks while the bag is
+    full — and must NOT append them to completed_tasks, so a same-day re-run after
+    bag cleanup still picks them up."""
+    device = DummyDevice()
+    ctx = PipelineContext(device=device)
+    ctx.variables["daily_queue"] = ["师门任务", "宝图任务"]
+    ctx.variables["shop_blocked_bag_full"] = True
+    ctx.variables["current_huoyue"] = 60
+    ctx.variables["completed_tasks"] = []
+    items = [
+        DummyOCRItem("师门任务", (594.0, 371.0)),
+        DummyOCRItem("宝图任务", (594.0, 263.0)),
+        DummyOCRItem("活跃0/10", (701.0, 442.0)),
+    ]
+    ctx.variables["_last_frame_items"] = items
+    dh.handle_activity_panel(ctx, NodeAction(type="custom", custom_func="handle_activity_panel"))
+    assert ctx.variables["completed_tasks"] == [], "gated tasks must not be marked complete"

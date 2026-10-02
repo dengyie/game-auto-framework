@@ -1218,13 +1218,14 @@ def handle_activity_panel(ctx: PipelineContext, act: NodeAction) -> None:
             continue
 
         # Bag-full gate (背包空间不足 latched by classify): the 师门 purchase subtask
-        # cannot complete until the bag is cleaned manually. Skip dispatch WITHOUT
-        # appending to completed_tasks — a same-day re-run after bag cleanup must
-        # still pick the quest up (live 2026-10-03: tracker->shop loop to TIMEOUT).
-        if task_name == "师门任务" and ctx.variables.get("shop_blocked_bag_full"):
+        # and the 宝图 dig subtask both acquire items at the 商会, which a full bag
+        # can never accept. Skip dispatch WITHOUT appending to completed_tasks — a
+        # same-day re-run after bag cleanup must still pick them up (live 2026-10-03:
+        # tracker->shop / turnin->shop loops to TIMEOUT).
+        if task_name in ("师门任务", "宝图任务") and ctx.variables.get("shop_blocked_bag_full"):
             logger.warning(
-                "[daily_panel] 师门任务 gated by game (背包空间不足 — purchase subtask cannot "
-                "complete); skipping for this run. Clean the bag and re-run 师门任务."
+                f"[daily_panel] {task_name} gated by game (背包空间不足 — purchase subtask cannot "
+                "complete); skipping for this run. Clean the bag and re-run."
             )
             continue
 
@@ -1639,9 +1640,24 @@ def buy_treasure_map(ctx: PipelineContext, act: NodeAction) -> None:
 
 
 def click_turnin(ctx: PipelineContext, act: NodeAction) -> None:
-    """Click 上交 or 给予 when handing in items or completing quest turn-in."""
+    """Click 上交 or 给予 when handing in items or completing quest turn-in.
+
+    With the bag-full latch set, a turn-in line that owns 0/N of the required item
+    can only ever route back to the shop, which refuses to buy (live 2026-10-03:
+    宝图 上交（拥有0/1）-> shop -> bag-full refuse -> close -> turnin, the same-coord
+    watchdog fired at tick 62). Degrade the current task instead of clicking.
+    """
     items = ctx.variables.get("_last_frame_items") or []
     turnin_btn = _find(items, lambda it: any(kw in it.text for kw in ("上交", "给予", "上交任务")) and it.center[0] > 600 and it.center[1] > 350)
+    if ctx.variables.get("shop_blocked_bag_full") and any(
+        kw in getattr(it, "text", "") for it in items for kw in ("拥有0/", "（拥有0", "(拥有0")
+    ):
+        logger.warning(
+            "[turnin] Bag full and the required item is not owned (拥有0/) — the purchase "
+            "that would produce it is blocked; degrading the current task"
+        )
+        ctx.variables["current_task_done"] = True
+        return
     if turnin_btn is not None:
         tx, ty = _center(turnin_btn)
         logger.info(f"[turnin] Clicking [{turnin_btn.text}] at ({tx:.0f}, {ty:.0f})")
