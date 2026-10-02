@@ -8,6 +8,7 @@ Unit tests for the autonomous daily activities DAG and interaction handlers:
 """
 
 from unittest.mock import patch
+from datetime import date
 import pytest
 
 from core.device.virtual import VirtualDevice
@@ -169,7 +170,15 @@ def test_unparsed_queued_task_keeps_the_day_open():
     ctx.variables["_last_frame_items"] = items
     ctx.variables["_last_frame"] = None
 
-    handle_activity_panel(ctx, NodeAction(type="custom", custom_func="handle_activity_panel"))
+    # The handler auto-completes 科举乡试 on weekends (weekday() >= 5) before the
+    # card scan; pin to a weekday so the assertion tests the scroll-keep-open path
+    # regardless of the real calendar (2026-10-03 was a Saturday and failed this).
+    class _Weekday(date):
+        def weekday(self):
+            return 2  # Wednesday
+
+    with patch("plugins.mhxy_mobile.custom.daily_handlers.date", _Weekday):
+        handle_activity_panel(ctx, NodeAction(type="custom", custom_func="handle_activity_panel"))
 
     assert "科举乡试" not in ctx.variables["completed_tasks"]
     assert "三界奇缘" not in ctx.variables["completed_tasks"]
@@ -1922,3 +1931,72 @@ def test_buy_treasure_map_uses_stale_cache_only_when_no_fresh_frame():
     dh.buy_treasure_map(ctx, NodeAction(type="custom", custom_func="buy_treasure_map"))
     assert device.clicks == []  # ROI 过滤后无按钮 → 不点
     assert ctx.variables["treasure_map_buy_attempts"] == 1
+
+
+# --- bag-full gate + stall overlay confirm (live 2026-10-03: 师门-阴晴圆缺
+# purchase toasted 背包空间不足; the per-window budget then refused every retry
+# and the tracker -> shop cycle ran the same-coord watchdog to TIMEOUT) ---------
+
+def test_bag_full_toast_latches_shop_block_and_degrades_current_task():
+    """背包空间不足 must latch a whole-run shop block so shop_buy stops buying and
+    the current quest degrades instead of looping tracker -> shop forever."""
+    ctx = PipelineContext(device=DummyDevice())
+    items = [DummyOCRItem("摆摊·", (663.0, 42.0)), DummyOCRItem("背包空间不足", (1170.0, 286.0))]
+    with patch.object(dh, "_ocr_items", return_value=items):
+        dh.classify_screen(ctx, None)
+    assert ctx.variables["shop_blocked_bag_full"] is True
+    assert ctx.variables["current_task_done"] is True
+
+
+def test_shop_buy_refuses_when_bag_full_latched():
+    """A latched full bag must never click 购买 — close the window and return."""
+    device = DummyDevice()
+    ctx = PipelineContext(device=device)
+    ctx.variables["shop_blocked_bag_full"] = True
+    ctx.variables["_last_frame_items"] = [
+        DummyOCRItem("药店", (663.0, 42.0)),
+        DummyOCRItem("金疮药", (525.0, 307.0)),
+        DummyOCRItem("购买", (1010.0, 656.0)),
+    ]
+    dh.click_shop_buy(ctx, NodeAction(type="custom", custom_func="click_shop_buy"))
+    assert device.clicks == [], "never click 购买 into a full bag"
+
+
+def test_stall_overlay_confirm_presses_purchase_once():
+    """The 'X秒后自动购买' overlay is the game asking for the confirm press: shop_buy
+    must press 购买 once to confirm, then close on the next tick without re-buying."""
+    device = DummyDevice()
+    ctx = PipelineContext(device=device)
+    overlay = [
+        DummyOCRItem("摆摊·", (663.0, 42.0)),
+        DummyOCRItem("定神香", (525.0, 192.0)),
+        DummyOCRItem("0秒后自动购买", (1009.0, 613.0)),
+        DummyOCRItem("购买", (1010.0, 656.0)),
+    ]
+    ctx.variables["_last_frame_items"] = overlay
+    dh.click_shop_buy(ctx, NodeAction(type="custom", custom_func="click_shop_buy"))
+    assert (1010.0, 656.0) in device.clicks, "confirm the pending overlay purchase"
+    assert ctx.variables["stall_confirmed_this_window"] is True
+
+    # Next tick, overlay still on screen: do NOT press 购买 again — close instead.
+    device.clicks.clear()
+    device.keys.clear()
+    dh.click_shop_buy(ctx, NodeAction(type="custom", custom_func="click_shop_buy"))
+    assert device.clicks == [], "already confirmed — no second purchase press"
+    assert device.keys == [4], "close the stall window to observe the outcome"
+
+
+def test_stall_first_purchase_does_not_close_window():
+    """First 购买 press in a stall opens the confirm overlay — closing immediately
+    (old behavior) cancelled the pending purchase (live 2026-10-03). No BACK/key
+    after the first click."""
+    device = DummyDevice()
+    ctx = PipelineContext(device=device)
+    ctx.variables["_last_frame_items"] = [
+        DummyOCRItem("摆摊·", (663.0, 42.0)),
+        DummyOCRItem("定神香", (525.0, 192.0)),
+        DummyOCRItem("购买", (1010.0, 656.0)),
+    ]
+    dh.click_shop_buy(ctx, NodeAction(type="custom", custom_func="click_shop_buy"))
+    assert (1010.0, 656.0) in device.clicks
+    assert device.keys == [], "must not close the stall before the overlay confirms"

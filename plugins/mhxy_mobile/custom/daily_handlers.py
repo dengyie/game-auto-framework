@@ -487,6 +487,16 @@ def classify_screen(ctx: PipelineContext, frame: Any, rec: NodeRecognition = Non
         if "秘境降妖" not in v["completed_tasks"]:
             v["completed_tasks"].append("秘境降妖")
         v["current_task_done"] = True
+    elif any("背包空间不足" in t for t in texts):
+        # Quest purchases (商会摆摊, e.g. 师门-阴晴圆缺) fail with a full bag — buying
+        # again can never succeed until space is freed manually. Latch it: shop_buy
+        # refuses, the current quest degrades, and the daily panel dispatch skips the
+        # quest instead of looping tracker -> shop -> budget-refused forever
+        # (live 2026-10-03: the purchase toasted 背包空间不足, the per-window budget
+        # latch then refused every retry, and the tracker click cycle ran to TIMEOUT).
+        logger.warning("[classify] Intercepted toast: 背包空间不足! Blocking shop purchases; current quest degrades.")
+        v["shop_blocked_bag_full"] = True
+        v["current_task_done"] = True
 
     # 0.2 Safety: the double-back quit-game confirm (少侠确定离开游戏吗) must NEVER be
     # auto-confirmed — 确定 quits the whole game client.
@@ -836,6 +846,15 @@ def classify_screen(ctx: PipelineContext, frame: Any, rec: NodeRecognition = Non
     if not v["popup_open"] and ctx.variables.get("promo_block_latch"):
         ctx.variables.pop("promo_block_latch", None)
         logger.warning("[classify] promo_block_latch cleared — promo overlay gone")
+
+    # Stall confirm flag is per-shop-window: once the window is gone the next one
+    # starts fresh (the confirm press is consumed by the overlay's own lifecycle).
+    if not v["shop_open"] and ctx.variables.pop("stall_confirmed_this_window", None):
+        logger.info("[classify] shop closed — stall confirm flag reset")
+
+    # The full-bag block persists for the whole run (the bot cannot free bag space
+    # safely); only a fresh runner invocation clears it — after manual bag cleanup
+    # the re-run picks 师门任务 up again because it was never marked completed.
 
     # Same-coordinate-repeat watchdog (see _click): battle or an open activity panel is
     # unambiguous progress, so a repeat streak carried over from a prior dead screen is
@@ -1198,6 +1217,17 @@ def handle_activity_panel(ctx: PipelineContext, act: NodeAction) -> None:
             completed_tasks.append(task_name)
             continue
 
+        # Bag-full gate (背包空间不足 latched by classify): the 师门 purchase subtask
+        # cannot complete until the bag is cleaned manually. Skip dispatch WITHOUT
+        # appending to completed_tasks — a same-day re-run after bag cleanup must
+        # still pick the quest up (live 2026-10-03: tracker->shop loop to TIMEOUT).
+        if task_name == "师门任务" and ctx.variables.get("shop_blocked_bag_full"):
+            logger.warning(
+                "[daily_panel] 师门任务 gated by game (背包空间不足 — purchase subtask cannot "
+                "complete); skipping for this run. Clean the bag and re-run 师门任务."
+            )
+            continue
+
         if card and not card["is_done"] and not card["join_btn"] and "开启" not in card["card_text"]:
             logger.warning(
                 f"[daily_panel] Activity [{task_name}] not done ({card['current_cnt']}/{card['max_cnt']}) "
@@ -1482,6 +1512,29 @@ def click_shop_buy(ctx: PipelineContext, act: NodeAction) -> None:
             _exit_shop(ctx, items)
             return
 
+    # A full bag (背包空间不足 toast latched by classify) can never accept a purchase:
+    # refuse and close instead of looping tracker -> shop -> budget-refused forever.
+    if ctx.variables.get("shop_blocked_bag_full"):
+        logger.warning("[shop_buy] 背包空间不足 latched — refusing to buy, closing window")
+        _exit_shop(ctx, items)
+        return
+
+    # The stall auto-buy overlay ("X秒后自动购买" + 购买) is the game asking for the
+    # confirm press — the countdown does not fire on its own (live 2026-10-03: it sat
+    # at 0秒 until 购买 was pressed again). One confirmation click per window.
+    stall_overlay = any("自动购买" in getattr(it, "text", "") for it in items)
+    if stall_overlay and buy_btn is not None:
+        if ctx.variables.get("stall_confirmed_this_window"):
+            logger.warning("[shop_buy] Stall confirm already pressed; closing window to observe the outcome")
+            _exit_shop(ctx, items)
+            return
+        ctx.variables["stall_confirmed_this_window"] = True
+        bx, by = _center(buy_btn)
+        logger.info(f"[shop_buy] Stall auto-buy overlay; confirming purchase at ({bx:.0f}, {by:.0f})")
+        _click(ctx, bx, by)
+        time.sleep(2.0)
+        return
+
     if buy_btn is not None:
         if buys_done >= max_buys:
             logger.info(f"[shop_buy] 本次窗口已购买 {buys_done} 次，停止重复购买（背包保护），关闭窗口")
@@ -1503,15 +1556,6 @@ def click_shop_buy(ctx: PipelineContext, act: NodeAction) -> None:
         logger.info("[shop_buy] 未检测到「购买」按钮，跳过本次点击（不盲点坐标）")
         return
     time.sleep(1.5)
-
-    # Check if in player stall (摆摊): buying does not auto-close stall, so close it to resume quest
-    is_stall = any("摆摊" in getattr(it, "text", "") for it in items) or any("我要购买" in getattr(it, "text", "") for it in items)
-    if is_stall:
-        close_btn = _find(items, lambda it: it.text in ("×", "X", "x", "✕") and it.center[0] > 900 and it.center[1] < 150)
-        cx, cy = _center(close_btn) if close_btn is not None else (1111, 44)
-        logger.info(f"[shop_buy] Stall window detected; closing stall at ({cx:.0f}, {cy:.0f}) to continue quest")
-        _click(ctx, cx, cy)
-        time.sleep(1.5)
 
 
 def needs_treasure_map(ctx: PipelineContext, frame: Any, rec: NodeRecognition) -> bool:
