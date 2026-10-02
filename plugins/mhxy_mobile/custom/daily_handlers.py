@@ -808,9 +808,12 @@ def classify_screen(ctx: PipelineContext, frame: Any, rec: NodeRecognition = Non
 
     # Same idea for the quiz bank-miss refusal streak: it only means something while
     # the same misparsed "quiz" screen persists; a fresh quiz_open (real quiz window,
-    # banner gone) must start from zero.
+    # banner gone) must start from zero. The promo BACK streak clears when no popup
+    # is classified at all, so each promo episode gets its own bounded burst.
     if not v["quiz_open"] and "quiz_refusal_streak" in ctx.variables:
         ctx.variables.pop("quiz_refusal_streak", None)
+    if not v["popup_open"] and "promo_back_streak" in ctx.variables:
+        ctx.variables.pop("promo_back_streak", None)
 
     # Same-coordinate-repeat watchdog (see _click): battle or an open activity panel is
     # unambiguous progress, so a repeat streak carried over from a prior dead screen is
@@ -2075,6 +2078,20 @@ def dismiss_popups(ctx: PipelineContext, act: NodeAction) -> None:
         "每日新发现", "上线领全武将", "首发，可以逛", "可以逛的武侠",
         "邀你战三界", "共渡灵妖劫", "共遮灵妖劫",
     )):
+        promo_back_streak = int(ctx.variables.get("promo_back_streak", 0)) + 1
+        ctx.variables["promo_back_streak"] = promo_back_streak
+        if promo_back_streak > 8:
+            # Live 2026-10-02: 30 consecutive promo BACKs walked the client all the
+            # way to the launcher. Beyond a bounded burst, stop pressing and wait —
+            # a promo that truly ignores BACK must stall visibly instead of risking
+            # further navigation; the runner's foreground guard re-launches the
+            # client if a BACK already left the game.
+            logger.warning(
+                f"[dismiss_popups] Promo BACK streak {promo_back_streak} — suspending BACK "
+                f"to avoid walking out of the client; waiting"
+            )
+            time.sleep(2.0)
+            return
         logger.info("[dismiss_popups] Cross-game promo carousel detected; closing via single back key (never clicking 领取)")
         if ctx.device is not None and hasattr(ctx.device, "press_key"):
             ctx.device.press_key(4)

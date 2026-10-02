@@ -44,6 +44,31 @@ LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
 SCREENCAP_ATTEMPTS = 3
 SCREENCAP_STREAK_BREAK = 3
 TICK_ERROR_STREAK_BREAK = 5
+TARGET_PACKAGE = "com.netease.my"
+FG_RESTART_STREAK_BREAK = 3
+
+
+def ensure_game_foreground(device, package_name: str, restart_streak: int) -> int:
+    """Re-launch the client when it lost the foreground; return the updated streak.
+
+    Live 2026-10-02: 30 promo-carousel BACKs walked the client all the way to the
+    MuMu launcher, where the desktop's own 每日新发现 promo widget kept re-classifying
+    as popup_open — acting on launcher pixels can only ever make things worse, so
+    the runner must restore the client itself. Callers abort when the streak reaches
+    FG_RESTART_STREAK_BREAK (client keeps leaving / cannot launch).
+    """
+    if device.is_foreground_app(package_name):
+        return 0
+    streak = restart_streak + 1
+    logger.warning(
+        f"Game client not in foreground (streak {streak}/{FG_RESTART_STREAK_BREAK}); "
+        f"re-launching {package_name}..."
+    )
+    try:
+        device.start_app(package_name)
+    except Exception as e:
+        logger.error(f"start_app({package_name}) failed: {e}")
+    return streak
 
 
 def _setup_logging() -> Path:
@@ -134,6 +159,7 @@ def main(max_ticks: int = 30, serial: str = "127.0.0.1:55556", queue: list | Non
 
         screencap_streak = 0
         tick_error_streak = 0
+        fg_restart_streak = 0
         pipeline.start()
         logger.info(
             f"Pipeline started at node [{pipeline.current_node_name}]. "
@@ -166,6 +192,21 @@ def main(max_ticks: int = 30, serial: str = "127.0.0.1:55556", queue: list | Non
                     break
                 continue
             screencap_streak = 0
+
+            # Foreground guard: any BACK source (promo dismissal, quiz escape,
+            # escape tiers) can pop the client off its last activity and drop the
+            # run onto the launcher, where OCR-ing desktop widgets only makes
+            # things worse. Restore the client and give it time to settle before
+            # the next tick; abort after repeated walk-outs.
+            fg_restart_streak = ensure_game_foreground(device, TARGET_PACKAGE, fg_restart_streak)
+            if fg_restart_streak >= FG_RESTART_STREAK_BREAK:
+                logger.error("Game client keeps leaving the foreground. Aborting run.")
+                status = PipelineStatus.FAILED
+                break
+            if fg_restart_streak > 0:
+                time.sleep(20.0)  # engine splash + login/auto-nav needs time to settle
+                ctx.variables.pop("promo_back_streak", None)  # fresh episode after relaunch
+                continue
 
             try:
                 prev_node = pipeline.current_node_name

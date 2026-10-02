@@ -62,6 +62,17 @@ class BaseDevice(abc.ABC):
         """
         return self._connected
 
+    def is_foreground_app(self, package_name: str) -> bool:
+        """Whether package_name owns the focused window.
+
+        Platforms that cannot answer return True (fail open) so foreground
+        guards never block devices without a window-manager notion (virtual,
+        mock). ADB overrides with a real focused-window check — pidof alone
+        misses the MuMu mini-window case where the game process stays alive
+        after being backgrounded to the launcher.
+        """
+        return True
+
     @abc.abstractmethod
     def screencap(self) -> bytes:
         """

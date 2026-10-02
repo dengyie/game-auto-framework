@@ -22,6 +22,8 @@ from plugins.mhxy_mobile.custom.daily_handlers import (
     handle_quiz,
     open_activity_panel,
 )
+from core.device.adb import AdbDevice
+from scripts.run_daily_dailies import ensure_game_foreground
 from scheduler.dag import NodeAction, PipelineContext
 
 
@@ -249,6 +251,81 @@ def test_promo_carousel_dismisses_via_single_back_never_claim():
     dh.dismiss_popups(ctx, NodeAction(type="custom", custom_func="dismiss_popups"))
     assert device.keys == [4]
     assert device.clicks == [], "never click the promo 领取"
+
+
+def test_promo_back_streak_suspends_after_burst():
+    """Live 2026-10-02: 30 consecutive promo BACKs walked the client to the launcher.
+    The burst must be bounded: after 8 BACKs the handler suspends and waits."""
+    device = DummyDevice()
+    ctx = PipelineContext(device=device)
+    ctx.variables["_last_frame_items"] = _promo_items()
+    act = NodeAction(type="custom", custom_func="dismiss_popups")
+    for _ in range(8):
+        dh.dismiss_popups(ctx, act)
+    assert device.keys == [4] * 8
+    dh.dismiss_popups(ctx, act)  # streak 9: suspended — no further BACK
+    assert device.keys == [4] * 8
+    assert ctx.variables["promo_back_streak"] == 9
+
+
+def test_classify_screen_clears_promo_back_streak_when_no_popup():
+    """Each promo episode gets its own bounded burst: a tick with no popup at all
+    clears the streak (e.g. the game re-launched into a clean main city)."""
+    device = DummyDevice()
+    ctx = PipelineContext(device=device)
+    ctx.variables["promo_back_streak"] = 7
+    items = [
+        DummyOCRItem("指引", (270.0, 63.0)),
+        DummyOCRItem("活动", (352.0, 63.0)),
+    ]
+    with patch.object(dh, "_ocr_items", return_value=items):
+        dh.classify_screen(ctx, None)
+    assert "promo_back_streak" not in ctx.variables
+
+
+# --- runner foreground guard ---------------------------------------------------
+
+class _FgDevice:
+    def __init__(self, foreground: bool):
+        self.foreground = foreground
+        self.starts = []
+
+    def is_foreground_app(self, package_name):
+        return self.foreground
+
+    def start_app(self, package_name):
+        self.starts.append(package_name)
+        return True
+
+
+def test_ensure_game_foreground_healthy_resets_streak_without_relaunch():
+    dev = _FgDevice(foreground=True)
+    assert ensure_game_foreground(dev, "com.netease.my", 2) == 0
+    assert dev.starts == []
+
+
+def test_ensure_game_foreground_relaunches_and_accumulates_streak():
+    dev = _FgDevice(foreground=False)
+    assert ensure_game_foreground(dev, "com.netease.my", 0) == 1
+    assert dev.starts == ["com.netease.my"]
+    assert ensure_game_foreground(dev, "com.netease.my", 1) == 2
+    assert len(dev.starts) == 2
+
+
+def test_adb_is_foreground_app_parses_focus_line_and_fails_open():
+    dev = AdbDevice(serial="mock_device:5555")
+    focused_game = (
+        "  mCurrentFocus=Window{79aeef4 u0 com.netease.my/com.netease.game.MessiahNativeActivity}\n"
+    )
+    focused_launcher = "  mCurrentFocus=Window{d4d981a u0 app.lawnchair/app.lawnchair.LawnchairLauncher}\n"
+    with patch.object(dev._driver, "_run_adb", return_value=focused_game):
+        assert dev.is_foreground_app("com.netease.my") is True
+    with patch.object(dev._driver, "_run_adb", return_value=focused_launcher):
+        # MuMu mini-window: the game process stays alive (pidof hits) but the
+        # launcher owns the focus — this False is what the guard acts on.
+        assert dev.is_foreground_app("com.netease.my") is False
+    with patch.object(dev._driver, "_run_adb", return_value=""):
+        assert dev.is_foreground_app("com.netease.my") is True  # fail open
 
 
 def test_dialog_claim_streak_degrades_to_back_after_3():

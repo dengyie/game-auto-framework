@@ -521,3 +521,19 @@ class AdbDevice(BaseDevice):
             return len(out.strip()) > 0
         except Exception:
             return False
+
+    def is_foreground_app(self, package_name: str) -> bool:
+        """True when package_name owns the focused window.
+
+        pidof (is_app_running) is not enough on MuMu 12: BACK/HOME can leave
+        the game process alive while shrinking it to the launcher mini-window,
+        so the focused-window line is the real truth. Fail open (True) when
+        the focus line cannot be parsed so foreground guards never block a run
+        on a transient dumpsys hiccup.
+        """
+        out = self._driver._run_adb("dumpsys", "window")
+        for line in out.splitlines():
+            line = line.strip()
+            if line.startswith("mCurrentFocus") or line.startswith("mFocusedApp"):
+                return package_name in line
+        return True
