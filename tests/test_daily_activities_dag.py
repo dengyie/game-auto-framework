@@ -1410,7 +1410,10 @@ def test_shop_buy_guards_repeat_purchase_in_same_dialog():
 
 
 def test_shop_buy_new_dialog_resets_purchase_budget():
-    """不同商铺窗口（商品行变化）应获得新的购买预算，允许再次购买。"""
+    """真正的新商铺窗口应获得新的购买预算。
+
+    回归 2026-10-04 语义：预算只在商铺窗口真正关闭 2+ tick（classify 的
+    shop_closed_streak）后才重置——重开窗口前先模拟两帧无 购买 的关闭期。"""
     device = DummyDevice()
     ctx = PipelineContext(device=device)
     ctx.variables["_last_frame_items"] = [
@@ -1421,7 +1424,17 @@ def test_shop_buy_new_dialog_resets_purchase_budget():
     click_shop_buy(ctx, NodeAction(type="custom", custom_func="click_shop_buy"))
     assert (1010.0, 656.0) in device.clicks
 
-    # A genuinely different shop (different product rows) is a new window: buy allowed again.
+    # Window closes (two classify ticks without 购买) — the budget resets there.
+    with patch("plugins.mhxy_mobile.custom.daily_handlers._ocr_items") as mock_ocr:
+        mock_ocr.return_value = [
+            DummyOCRItem("药店", (663.0, 42.0)),
+            DummyOCRItem("金疮药", (525.0, 307.0)),
+        ]
+        classify_screen(ctx, None)
+        classify_screen(ctx, None)
+    assert ctx.variables.get("shop_buys_this_dialog", 0) == 0, "close period must reset the budget"
+
+    # A genuinely new shop window (different product rows) can buy again.
     device.clicks.clear()
     ctx.variables["_last_frame_items"] = [
         DummyOCRItem("药店", (663.0, 42.0)),
@@ -1430,6 +1443,40 @@ def test_shop_buy_new_dialog_resets_purchase_budget():
     ]
     click_shop_buy(ctx, NodeAction(type="custom", custom_func="click_shop_buy"))
     assert (1010.0, 656.0) in device.clicks
+
+
+def test_shop_buy_row_drift_never_resets_budget():
+    """回归 2026-10-04：同一窗口内购买后确认弹窗/OCR 抖动改变可见行，
+    签名漂移绝不能重置购买预算——live 实跑在同一窗口连点 购买 10 次直到
+    stall watchdog 杀掉整跑。商铺未真正关闭（streak=0），预算必须保留。"""
+    device = DummyDevice()
+    ctx = PipelineContext(device=device)
+    with patch("plugins.mhxy_mobile.custom.daily_handlers._ocr_items") as mock_ocr:
+        mock_ocr.return_value = [
+            DummyOCRItem("药店", (663.0, 42.0)),
+            DummyOCRItem("金疮药", (525.0, 307.0)),
+            DummyOCRItem("购买", (1010.0, 656.0)),
+        ]
+        classify_screen(ctx, None)
+    click_shop_buy(ctx, NodeAction(type="custom", custom_func="click_shop_buy"))
+    assert (1010.0, 656.0) in device.clicks
+
+    # Next tick: same window still open, but the confirm popup changed the
+    # visible rows (and OCR jitter moved the button a couple of pixels).
+    # classify sees the 购买 button again → shop still open → streak stays 0.
+    with patch("plugins.mhxy_mobile.custom.daily_handlers._ocr_items") as mock_ocr:
+        mock_ocr.return_value = [
+            DummyOCRItem("药店", (663.0, 42.0)),
+            DummyOCRItem("金疮药", (525.0, 307.0)),
+            DummyOCRItem("购买数量", (853.0, 392.0)),
+            DummyOCRItem("确定", (700.0, 500.0)),
+            DummyOCRItem("购买", (1012.0, 657.0)),
+        ]
+        classify_screen(ctx, None)
+    assert ctx.variables.get("shop_closed_streak", 0) == 0, "shop is still open — streak must stay 0"
+    click_shop_buy(ctx, NodeAction(type="custom", custom_func="click_shop_buy"))
+    assert (1012.0, 657.0) not in device.clicks, "row drift must not reset the budget"
+    assert ctx.variables.get("shop_buys_this_dialog", 0) == 1
 
 
 def test_shop_buy_refuses_treasure_map_outside_dig_request():

@@ -554,6 +554,22 @@ def classify_screen(ctx: PipelineContext, frame: Any, rec: NodeRecognition = Non
 
     # 4. Shop buying dialog (购买 button in shop)
     v["shop_open"] = not v["in_battle"] and bool(_find(items, lambda it: it.text == "购买" and it.center[0] > 800 and it.center[1] > 450))
+    # Shop-closed streak: the per-window purchase budget may only reset once the
+    # shop window has truly been gone for 2+ ticks. Row-set drift while the SAME
+    # window is open (buy-confirm popup, OCR jitter) must not reset the budget —
+    # live 2026-10-04 the signature changed every tick and 购买 was clicked 10x
+    # on one window until the stall watchdog killed the run.
+    if v["shop_open"]:
+        ctx.variables["shop_closed_streak"] = 0
+    else:
+        closed_streak = ctx.variables.get("shop_closed_streak", 0) + 1
+        ctx.variables["shop_closed_streak"] = closed_streak
+        if closed_streak >= 2:
+            # Only here may a new shop window start with a fresh purchase budget.
+            if ctx.variables.get("shop_buys_this_dialog", 0):
+                ctx.variables["shop_buys_this_dialog"] = 0
+            ctx.variables.pop("shop_dialog_signature", None)
+            ctx.variables.pop("stall_confirmed_this_window", None)
 
     # 5. Turn-in dialog (上交 or 给予)
     v["turnin_open"] = not v["in_battle"] and bool(_find(items, lambda it: any(kw in it.text for kw in ("上交", "给予", "上交任务")) and it.center[0] > 600 and it.center[1] > 350))
@@ -1530,11 +1546,11 @@ def click_shop_buy(ctx: PipelineContext, act: NodeAction) -> None:
     items = ctx.variables.get("_last_frame_items") or []
     buy_btn = _find(items, lambda it: it.text == "购买" and it.center[0] > 800 and it.center[1] > 450)
 
-    # Reset the per-window purchase budget whenever the shop window changes.
-    signature = _shop_dialog_signature(items, buy_btn)
-    if ctx.variables.get("shop_dialog_signature") != signature:
-        ctx.variables["shop_dialog_signature"] = signature
-        ctx.variables["shop_buys_this_dialog"] = 0
+    # The per-window purchase budget is reset by classify_screen only after the
+    # shop has truly been gone for 2+ ticks (shop_closed_streak). Row-set drift
+    # while the SAME window is open (confirm popup, OCR jitter) must never reset
+    # it here — that regression re-enabled endless buying on one window
+    # (live 2026-10-04: 购买 clicked 10x until the stall watchdog killed the run).
     buys_done = int(ctx.variables.get("shop_buys_this_dialog", 0))
     max_buys = int(ctx.variables.get("max_shop_buys_per_dialog", MAX_SHOP_BUYS_PER_DIALOG))
 
