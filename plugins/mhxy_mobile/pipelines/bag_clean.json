@@ -1,0 +1,19 @@
+{
+  "name": "bag_clean",
+  "entry": "needs_bag_clean",
+  "nodes": [
+    {
+      "name": "needs_bag_clean",
+      "recognition": {
+        "type": "custom",
+        "custom_func": "needs_bag_clean"
+      },
+      "action": {
+        "type": "custom",
+        "custom_func": "run_bag_clean_pass"
+      },
+      "timeout_sec": 180.0,
+      "next": []
+    }
+  ]
+}

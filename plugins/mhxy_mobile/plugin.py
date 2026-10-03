@@ -158,6 +158,11 @@ class MHXYMobilePlugin(BaseGamePlugin):
         # at a time, at the moment of digging, never stockpiled.
         context.register_recognition("needs_treasure_map", dh.needs_treasure_map)
         context.register_action("buy_treasure_map", dh.buy_treasure_map)
+        # Dedicated bag cleanup (清理背包, user request 2026-10-03): whitelist-driven
+        # sell of junk when the game latches 背包空间不足. Empty whitelist = scan-only.
+        from plugins.mhxy_mobile.custom import bag_cleaner as bc
+        context.register_recognition("needs_bag_clean", bc.needs_bag_clean)
+        context.register_action("run_bag_clean_pass", bc.run_bag_clean_pass)
 
     # --- Shimen Handlers ---
 

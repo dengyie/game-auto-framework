@@ -1,322 +1,341 @@
 {
-  "name": "daily_dailies",
-  "entry": "sense",
-  "nodes": [
+ "name": "daily_dailies",
+ "entry": "sense",
+ "nodes": [
+  {
+   "name": "sense",
+   "recognition": {
+    "type": "custom",
+    "custom_func": "classify_screen"
+   },
+   "action": {
+    "type": "custom",
+    "custom_func": "noop_wait",
+    "duration": 0.5
+   },
+   "timeout_sec": 600,
+   "branches": [
     {
-      "name": "sense",
-      "recognition": {
-        "type": "custom",
-        "custom_func": "classify_screen"
-      },
-      "action": {
-        "type": "custom",
-        "custom_func": "noop_wait",
-        "duration": 0.5
-      },
-      "timeout_sec": 600,
-      "branches": [
-        {
-          "condition": "in_battle",
-          "next": "battle_step"
-        },
-        {
-          "condition": "quiz_open",
-          "next": "quiz_answer"
-        },
-        {
-          "condition": "popup_open",
-          "next": "dismiss_popup"
-        },
-        {
-          "condition": "all_dailies_done",
-          "next": "daily_finish"
-        },
-        {
-          "condition": "panel_open",
-          "next": "panel_dispatch"
-        },
-        {
-          "condition": "shimen_board_open",
-          "next": "shimen_board"
-        },
-        {
-          "condition": "shop_open",
-          "next": "shop_buy"
-        },
-        {
-          "condition": "turnin_open",
-          "next": "turnin_item"
-        },
-        {
-          "condition": "deposit_open",
-          "next": "deposit_confirm"
-        },
-        {
-          "condition": "use_item_open",
-          "next": "use_item"
-        },
-        {
-          "condition": "dialog_open",
-          "next": "dialog_choice"
-        },
-        {
-          "condition": "auto_walking",
-          "next": "wait_walking"
-        },
-        {
-          "condition": "popup_open",
-          "next": "dismiss_popup"
-        },
-        {
-          "condition": "need_open_panel",
-          "next": "open_panel"
-        },
-        {
-          "condition": "tracker_active",
-          "next": "click_tracker"
-        }
-      ],
-      "next": [
-        "wait_idle"
-      ]
+     "condition": "in_battle",
+     "next": "battle_step"
     },
     {
-      "name": "quiz_answer",
-      "recognition": {
-        "type": "custom",
-        "custom_func": "always_true"
-      },
-      "action": {
-        "type": "custom",
-        "args": {},
-        "custom_func": "handle_quiz"
-      },
-      "timeout_sec": 60,
-      "next": [
-        "sense"
-      ]
+     "condition": "quiz_open",
+     "next": "quiz_answer"
     },
     {
-      "name": "battle_step",
-      "recognition": {
-        "type": "custom",
-        "custom_func": "always_true"
-      },
-      "action": {
-        "type": "custom",
-        "args": {},
-        "custom_func": "do_battle_step"
-      },
-      "timeout_sec": 60,
-      "next": [
-        "sense"
-      ]
+     "condition": "popup_open",
+     "next": "dismiss_popup"
     },
     {
-      "name": "dismiss_popup",
-      "recognition": {
-        "type": "custom",
-        "custom_func": "always_true"
-      },
-      "action": {
-        "type": "custom",
-        "args": {},
-        "custom_func": "dismiss_popups"
-      },
-      "timeout_sec": 60,
-      "next": [
-        "sense"
-      ]
+     "condition": "all_dailies_done",
+     "next": "daily_finish"
     },
     {
-      "name": "shimen_board",
-      "recognition": {
-        "type": "custom",
-        "custom_func": "always_true"
-      },
-      "action": {
-        "type": "custom",
-        "args": {},
-        "custom_func": "click_shimen_board"
-      },
-      "timeout_sec": 60,
-      "next": [
-        "sense"
-      ]
+     "condition": "variables.get('shop_blocked_bag_full', False) and not variables.get('bag_clean_attempted', False)",
+     "next": "bag_clean"
     },
     {
-      "name": "shop_buy",
-      "recognition": {
-        "type": "custom",
-        "custom_func": "always_true"
-      },
-      "action": {
-        "type": "custom",
-        "args": {},
-        "custom_func": "click_shop_buy"
-      },
-      "timeout_sec": 60,
-      "next": [
-        "sense"
-      ]
+     "condition": "panel_open",
+     "next": "panel_dispatch"
     },
     {
-      "name": "turnin_item",
-      "recognition": {
-        "type": "custom",
-        "custom_func": "always_true"
-      },
-      "action": {
-        "type": "custom",
-        "args": {},
-        "custom_func": "click_turnin"
-      },
-      "timeout_sec": 60,
-      "next": [
-        "sense"
-      ]
+     "condition": "shimen_board_open",
+     "next": "shimen_board"
     },
     {
-      "name": "deposit_confirm",
-      "recognition": {
-        "type": "custom",
-        "custom_func": "always_true"
-      },
-      "action": {
-        "type": "custom",
-        "args": {},
-        "custom_func": "click_deposit_confirm"
-      },
-      "timeout_sec": 60,
-      "next": [
-        "sense"
-      ]
+     "condition": "shop_open",
+     "next": "shop_buy"
     },
     {
-      "name": "dialog_choice",
-      "recognition": {
-        "type": "custom",
-        "custom_func": "always_true"
-      },
-      "action": {
-        "type": "custom",
-        "args": {},
-        "custom_func": "click_dialog_choice"
-      },
-      "timeout_sec": 60,
-      "next": [
-        "sense"
-      ]
+     "condition": "turnin_open",
+     "next": "turnin_item"
     },
     {
-      "name": "use_item",
-      "recognition": {
-        "type": "custom",
-        "custom_func": "always_true"
-      },
-      "action": {
-        "type": "custom",
-        "args": {},
-        "custom_func": "click_use_item"
-      },
-      "timeout_sec": 60,
-      "next": [
-        "sense"
-      ]
+     "condition": "deposit_open",
+     "next": "deposit_confirm"
     },
     {
-      "name": "wait_walking",
-      "recognition": {
-        "type": "custom",
-        "custom_func": "always_true"
-      },
-      "action": {
-        "type": "custom",
-        "custom_func": "wait_walking"
-      },
-      "timeout_sec": 120,
-      "next": [
-        "sense"
-      ]
+     "condition": "use_item_open",
+     "next": "use_item"
     },
     {
-      "name": "open_panel",
-      "recognition": {
-        "type": "custom",
-        "custom_func": "always_true"
-      },
-      "action": {
-        "type": "custom",
-        "args": {},
-        "custom_func": "open_activity_panel"
-      },
-      "timeout_sec": 60,
-      "next": [
-        "sense"
-      ]
+     "condition": "dialog_open",
+     "next": "dialog_choice"
     },
     {
-      "name": "panel_dispatch",
-      "recognition": {
-        "type": "custom",
-        "custom_func": "always_true"
-      },
-      "action": {
-        "type": "custom",
-        "args": {},
-        "custom_func": "handle_activity_panel"
-      },
-      "timeout_sec": 60,
-      "next": [
-        "sense"
-      ]
+     "condition": "auto_walking",
+     "next": "wait_walking"
     },
     {
-      "name": "click_tracker",
-      "recognition": {
-        "type": "custom",
-        "custom_func": "always_true"
-      },
-      "action": {
-        "type": "custom",
-        "args": {},
-        "custom_func": "click_task_tracker"
-      },
-      "timeout_sec": 60,
-      "next": [
-        "sense"
-      ]
+     "condition": "popup_open",
+     "next": "dismiss_popup"
     },
     {
-      "name": "wait_idle",
-      "recognition": {
-        "type": "custom",
-        "custom_func": "always_true"
-      },
-      "action": {
-        "type": "custom",
-        "custom_func": "noop_wait",
-        "duration": 2.0
-      },
-      "timeout_sec": 60,
-      "next": [
-        "sense"
-      ]
+     "condition": "need_open_panel",
+     "next": "open_panel"
     },
     {
-      "name": "daily_finish",
-      "recognition": {
-        "type": "custom",
-        "custom_func": "always_true"
-      },
-      "action": {
-        "type": "custom",
-        "args": {},
-        "custom_func": "close_panel_and_finish"
-      },
-      "is_terminal": true,
-      "timeout_sec": 60,
-      "next": []
+     "condition": "tracker_active",
+     "next": "click_tracker"
     }
-  ]
+   ],
+   "next": [
+    "wait_idle"
+   ]
+  },
+  {
+   "name": "quiz_answer",
+   "recognition": {
+    "type": "custom",
+    "custom_func": "always_true"
+   },
+   "action": {
+    "type": "custom",
+    "args": {},
+    "custom_func": "handle_quiz"
+   },
+   "timeout_sec": 60,
+   "next": [
+    "sense"
+   ]
+  },
+  {
+   "name": "battle_step",
+   "recognition": {
+    "type": "custom",
+    "custom_func": "always_true"
+   },
+   "action": {
+    "type": "custom",
+    "args": {},
+    "custom_func": "do_battle_step"
+   },
+   "timeout_sec": 60,
+   "next": [
+    "sense"
+   ]
+  },
+  {
+   "name": "dismiss_popup",
+   "recognition": {
+    "type": "custom",
+    "custom_func": "always_true"
+   },
+   "action": {
+    "type": "custom",
+    "args": {},
+    "custom_func": "dismiss_popups"
+   },
+   "timeout_sec": 60,
+   "next": [
+    "sense"
+   ]
+  },
+  {
+   "name": "shimen_board",
+   "recognition": {
+    "type": "custom",
+    "custom_func": "always_true"
+   },
+   "action": {
+    "type": "custom",
+    "args": {},
+    "custom_func": "click_shimen_board"
+   },
+   "timeout_sec": 60,
+   "next": [
+    "sense"
+   ]
+  },
+  {
+   "name": "shop_buy",
+   "recognition": {
+    "type": "custom",
+    "custom_func": "always_true"
+   },
+   "action": {
+    "type": "custom",
+    "args": {},
+    "custom_func": "click_shop_buy"
+   },
+   "timeout_sec": 60,
+   "next": [
+    "sense"
+   ]
+  },
+  {
+   "name": "turnin_item",
+   "recognition": {
+    "type": "custom",
+    "custom_func": "always_true"
+   },
+   "action": {
+    "type": "custom",
+    "args": {},
+    "custom_func": "click_turnin"
+   },
+   "timeout_sec": 60,
+   "next": [
+    "sense"
+   ]
+  },
+  {
+   "name": "deposit_confirm",
+   "recognition": {
+    "type": "custom",
+    "custom_func": "always_true"
+   },
+   "action": {
+    "type": "custom",
+    "args": {},
+    "custom_func": "click_deposit_confirm"
+   },
+   "timeout_sec": 60,
+   "next": [
+    "sense"
+   ]
+  },
+  {
+   "name": "dialog_choice",
+   "recognition": {
+    "type": "custom",
+    "custom_func": "always_true"
+   },
+   "action": {
+    "type": "custom",
+    "args": {},
+    "custom_func": "click_dialog_choice"
+   },
+   "timeout_sec": 60,
+   "next": [
+    "sense"
+   ]
+  },
+  {
+   "name": "use_item",
+   "recognition": {
+    "type": "custom",
+    "custom_func": "always_true"
+   },
+   "action": {
+    "type": "custom",
+    "args": {},
+    "custom_func": "click_use_item"
+   },
+   "timeout_sec": 60,
+   "next": [
+    "sense"
+   ]
+  },
+  {
+   "name": "wait_walking",
+   "recognition": {
+    "type": "custom",
+    "custom_func": "always_true"
+   },
+   "action": {
+    "type": "custom",
+    "custom_func": "wait_walking"
+   },
+   "timeout_sec": 120,
+   "next": [
+    "sense"
+   ]
+  },
+  {
+   "name": "open_panel",
+   "recognition": {
+    "type": "custom",
+    "custom_func": "always_true"
+   },
+   "action": {
+    "type": "custom",
+    "args": {},
+    "custom_func": "open_activity_panel"
+   },
+   "timeout_sec": 60,
+   "next": [
+    "sense"
+   ]
+  },
+  {
+   "name": "panel_dispatch",
+   "recognition": {
+    "type": "custom",
+    "custom_func": "always_true"
+   },
+   "action": {
+    "type": "custom",
+    "args": {},
+    "custom_func": "handle_activity_panel"
+   },
+   "timeout_sec": 60,
+   "next": [
+    "sense"
+   ]
+  },
+  {
+   "name": "click_tracker",
+   "recognition": {
+    "type": "custom",
+    "custom_func": "always_true"
+   },
+   "action": {
+    "type": "custom",
+    "args": {},
+    "custom_func": "click_task_tracker"
+   },
+   "timeout_sec": 60,
+   "next": [
+    "sense"
+   ]
+  },
+  {
+   "name": "wait_idle",
+   "recognition": {
+    "type": "custom",
+    "custom_func": "always_true"
+   },
+   "action": {
+    "type": "custom",
+    "custom_func": "noop_wait",
+    "duration": 2.0
+   },
+   "timeout_sec": 60,
+   "next": [
+    "sense"
+   ]
+  },
+  {
+   "name": "daily_finish",
+   "recognition": {
+    "type": "custom",
+    "custom_func": "always_true"
+   },
+   "action": {
+    "type": "custom",
+    "args": {},
+    "custom_func": "close_panel_and_finish"
+   },
+   "is_terminal": true,
+   "timeout_sec": 60,
+   "next": []
+  },
+  {
+   "name": "bag_clean",
+   "recognition": {
+    "type": "custom",
+    "custom_func": "always_true"
+   },
+   "action": {
+    "type": "custom",
+    "custom_func": "run_bag_clean_pass"
+   },
+   "timeout_sec": 180.0,
+   "next": [
+    "sense"
+   ]
+  }
+ ]
 }
