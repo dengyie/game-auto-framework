@@ -2179,3 +2179,46 @@ def test_shimen_board_never_clicks_quit_or_xianyu_confirm():
     ]
     click_shimen_board(ctx, NodeAction(type="custom", custom_func="click_shimen_board"))
     assert (640.0, 556.0) not in device.clicks, "仙玉 spend dialog's 确定 must never be clicked"
+
+
+def test_quickslot_bare_use_is_not_a_popup():
+    """回归 2026-10-04 03:26：主界面右下角快捷栏（红罗羹/芭将军/使用/包裹）常驻可见，
+    其 裸「使用」与真物品弹窗的按钮位置重合。把它当成 use_item_open 会让 DAG 每帧
+    盲点同一坐标直到 stall watchdog 杀掉整跑（当时任务其实需要点追踪栏去花果山打贼王）。
+    没有弹窗特征（X/关闭/确定/自动完成任务）时绝不能算 use_item_open。"""
+    device = DummyDevice()
+    ctx = PipelineContext(device=device)
+    with patch("plugins.mhxy_mobile.custom.daily_handlers._ocr_items") as mock_ocr:
+        mock_ocr.return_value = [
+            DummyOCRItem("指引", (273.0, 63.0)),
+            DummyOCRItem("宝图任务", (1089.0, 195.0)),
+            DummyOCRItem("前往花果山战胜贼王符", (1144.0, 227.0)),
+            DummyOCRItem("红罗羹", (1093.0, 525.0)),
+            DummyOCRItem("芭将军", (910.0, 546.0)),
+            DummyOCRItem("使用", (1093.0, 577.0)),
+            DummyOCRItem("包裹", (1237.0, 609.0)),
+        ]
+        classify_screen(ctx, None)
+    assert ctx.variables.get("use_item_open") is not True, "bare quick-slot 使用 must not count as a popup"
+    assert ctx.variables.get("tracker_active") is True
+    click_use_item(ctx, NodeAction(type="custom", custom_func="click_use_item"))
+    assert device.clicks == [], "handler must not blind-click the quick-slot 使用"
+
+
+def test_real_item_popup_with_chrome_still_opens_use_item():
+    """真物品弹窗（心魔宝珠详情，带 X 关闭钮 + 使用）必须仍被识别为 use_item_open，
+    handler 才会点它的 使用 按钮。"""
+    device = DummyDevice()
+    ctx = PipelineContext(device=device)
+    with patch("plugins.mhxy_mobile.custom.daily_handlers._ocr_items") as mock_ocr:
+        mock_ocr.return_value = [
+            DummyOCRItem("心魔宝珠", (620.0, 186.0)),
+            DummyOCRItem("X", (1159.0, 395.0)),
+            DummyOCRItem("确定", (640.0, 556.0)),
+            DummyOCRItem("自动完成任务", (899.0, 548.0)),
+            DummyOCRItem("使用", (1094.0, 577.0)),
+        ]
+        classify_screen(ctx, None)
+    assert ctx.variables.get("use_item_open") is True, "popup chrome (X/确定) means a genuine item popup"
+    click_use_item(ctx, NodeAction(type="custom", custom_func="click_use_item"))
+    assert device.clicks == [(1094.0, 577.0)]

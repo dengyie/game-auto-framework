@@ -580,9 +580,24 @@ def classify_screen(ctx: PipelineContext, frame: Any, rec: NodeRecognition = Non
     if v["turnin_open"] and ctx.variables.get("turnin_bag_block_route"):
         v["turnin_open"] = False
 
-    # 6. Use item popup (使用) - floating, center, or quick-use right slot
+    # 6. Use item popup (使用) - floating, center, or quick-use right slot.
+    # Two positions must be told apart (live 2026-10-04 03:26):
+    #   * center-screen 使用 (500<x<900, e.g. 藏宝图 popup) — always a popup;
+    #   * bottom-right 使用 (x>=900) — either a real item popup (心魔宝珠 detail,
+    #     which carries dialog chrome: X/关闭 close button, 确定/自动完成任务) or
+    #     the world HUD's ALWAYS-visible quick-slot bar (红罗羹/芭将军/使用/包裹).
+    # Treating the bare quick-slot as a popup loops use_item clicks on the same
+    # spot until the stall watchdog kills the run while the quest actually needs
+    # the tracker, so bottom-right 使用 requires that chrome as evidence.
+    use_btn = _find(items, lambda it: it.text == "使用" and 500 < it.center[0] < 1250 and 380 < it.center[1] < 650)
+    if use_btn is not None and use_btn.center[0] >= 900:
+        use_popup_evidence = bool(_find(items, lambda it: (
+            it.text.strip() in ("×", "X", "x", "✕", "关闭") and 900 < it.center[0] < 1280 and it.center[1] < 500)
+            or it.text in ("确定", "自动完成任务")))
+    else:
+        use_popup_evidence = use_btn is not None
     v["use_item_open"] = (not v["in_battle"] and not v["xianyu_cost_popup"] and not v["quit_game_confirm"]
-                          and bool(_find(items, lambda it: it.text == "使用" and 500 < it.center[0] < 1250 and 380 < it.center[1] < 650)))
+                          and use_btn is not None and use_popup_evidence)
 
     # 7. Deposit confirm dialog (确定 / 确认) — never while a 仙玉 cost dialog or the
     # quit-game confirm is up (their 确定 buttons must never be clicked).
@@ -1742,16 +1757,26 @@ def click_turnin(ctx: PipelineContext, act: NodeAction) -> None:
 
 
 def click_use_item(ctx: PipelineContext, act: NodeAction) -> None:
-    """Click 使用 on item popup (e.g. 藏宝图, quest scroll)."""
+    """Click 使用 on item popup (e.g. 藏宝图, quest scroll).
+
+    Hardened 2026-10-04: the world HUD's quick-slot bar carries a bare 使用 at
+    the same position as a real item popup and is always visible. Clicking it
+    blind loops forever — gate the click behind the same popup-evidence check
+    classify_screen uses (close button above the row, or 确定/自动完成任务)."""
     items = ctx.variables.get("_last_frame_items") or []
     use_btn = _find(items, lambda it: it.text == "使用" and 500 < it.center[0] < 1250 and 380 < it.center[1] < 650)
-    if use_btn is not None:
+    if use_btn is not None and use_btn.center[0] >= 900:
+        popup_evidence = bool(_find(items, lambda it: (
+            it.text.strip() in ("×", "X", "x", "✕", "关闭") and 900 < it.center[0] < 1280 and it.center[1] < 500)
+            or it.text in ("确定", "自动完成任务")))
+    else:
+        popup_evidence = use_btn is not None
+    if use_btn is not None and popup_evidence:
         ux, uy = _center(use_btn)
         logger.info(f"[use_item] Clicking 使用 at ({ux:.0f}, {uy:.0f})")
         _click(ctx, ux, uy)
     else:
-        logger.info("[use_item] Fallback clicking 使用 at (1094, 578)")
-        _click(ctx, 1094, 578)
+        logger.info(f"[use_item] No genuine item popup (popup_evidence={popup_evidence}); not clicking")
     time.sleep(2.0)
 
 
