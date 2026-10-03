@@ -1,12 +1,12 @@
 {
   "name": "bag_clean",
-  "entry": "needs_bag_clean",
+  "entry": "clean_pass",
   "nodes": [
     {
-      "name": "needs_bag_clean",
+      "name": "clean_pass",
       "recognition": {
         "type": "custom",
-        "custom_func": "needs_bag_clean"
+        "custom_func": "always_true"
       },
       "action": {
         "type": "custom",
