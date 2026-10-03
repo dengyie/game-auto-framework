@@ -160,6 +160,7 @@ def main(max_ticks: int = 30, serial: str = "127.0.0.1:55556", queue: list | Non
         screencap_streak = 0
         tick_error_streak = 0
         fg_restart_streak = 0
+        bagfull_dig_done = False  # one-shot: dig 藏宝图 once per run when bag first latches full
         pipeline.start()
         logger.info(
             f"Pipeline started at node [{pipeline.current_node_name}]. "
@@ -233,6 +234,38 @@ def main(max_ticks: int = 30, serial: str = "127.0.0.1:55556", queue: list | Non
             if status in (PipelineStatus.COMPLETED, PipelineStatus.FAILED, PipelineStatus.TIMEOUT):
                 logger.info(f"Pipeline reached terminal status [{status.name}] at tick {tick}")
                 break
+
+            # Bag-full unblock (user policy 2026-10-03: 背包满了藏宝图先都挖完):
+            # when the daily DAG latches 背包空间不足, dig every 藏宝图 already in
+            # the bag before doing anything else. The dig frees bag slots (each map
+            # consumed removes one item) and completes the 宝图 dig, so quest
+            # purchases like 师门's 定神香 can succeed afterwards. Run the
+            # daily_baotu pipeline inline once per run, then clear the latches so
+            # the daily re-attempts the gated tasks; a still-full bag will re-toast
+            # and re-latch on the next failed purchase.
+            if ctx.variables.get("shop_blocked_bag_full") and not bagfull_dig_done:
+                bagfull_dig_done = True
+                logger.warning("[bagfull] 背包空间不足 latched — 先把背包里的藏宝图全部挖完再继续日常")
+                plugin.context.variables["pet_type"] = ctx.variables.get("pet_type", "attack")
+                dig_status = PipelineStatus.RUNNING
+                for dig_tick in range(1, 301):
+                    try:
+                        dig_status = plugin.run_pipeline_step("daily_baotu")
+                    except Exception:
+                        logger.exception(f"[bagfull] dig tick {dig_tick} error")
+                        dig_status = PipelineStatus.FAILED
+                        break
+                    if dig_status != PipelineStatus.RUNNING:
+                        logger.info(f"[bagfull] dig pass ended after {dig_tick} ticks (status={dig_status.name})")
+                        break
+                    time.sleep(1.2)
+                # The dig freed slots (or honestly failed) — drop the bag-full
+                # gate so the daily re-attempts the purchase and the turnin HUD
+                # routes normally; re-toast re-latches if still full.
+                ctx.variables.pop("shop_blocked_bag_full", None)
+                ctx.variables.pop("turnin_bag_block_route", None)
+                ctx.variables.pop("turnin_bag_block_streak", None)
+                logger.info("[bagfull] Cleared bag-full latches; resuming daily DAG")
 
             time.sleep(1.0)
     except Exception:
