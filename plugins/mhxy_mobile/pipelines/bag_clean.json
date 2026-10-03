@@ -6,14 +6,26 @@
       "name": "clean_pass",
       "recognition": {
         "type": "custom",
-        "custom_func": "always_true"
+        "custom_func": "clean_pass_ready"
       },
       "action": {
         "type": "custom",
         "custom_func": "run_bag_clean_pass"
       },
       "timeout_sec": 180.0,
-      "next": []
+      "next": [
+        "bag_clean_finish"
+      ]
+    },
+    {
+      "name": "bag_clean_finish",
+      "recognition": {
+        "type": "always"
+      },
+      "action": {
+        "type": "none"
+      },
+      "is_terminal": true
     }
   ]
 }

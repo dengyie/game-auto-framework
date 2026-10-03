@@ -168,13 +168,14 @@ def test_session_cap_bounds_the_pass():
     assert len(confirm_clicks) == 1, "session cap bounds the pass to 1 sale"
 
 
-def test_missing_bag_button_skips_without_blind_clicks():
+def test_missing_bag_label_falls_back_to_configured_btn_bag():
     device = DummyDevice()
     ctx = PipelineContext(device=device)
     ctx.variables["shop_blocked_bag_full"] = True
     screens = [
-        [DummyOCRItem("月宫", (640.0, 300.0))],  # no 背包 button visible
+        [DummyOCRItem("月宫", (640.0, 300.0))],  # no 背包 text label (icon-only button)
     ]
     _pass(ctx, _whitelist(["月华露"]), screens)
-    assert device.clicks == [], "no OCR-verified bag button -> no blind coordinates"
+    # the configured coordinates.json btn_bag (1180, 640, 45, 45) center
+    assert device.clicks[0] == (1202.5, 662.5), "bag open falls back to the trusted configured coord"
     assert ctx.variables["bag_clean_attempted"] is True

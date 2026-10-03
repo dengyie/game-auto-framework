@@ -162,6 +162,7 @@ class MHXYMobilePlugin(BaseGamePlugin):
         # sell of junk when the game latches 背包空间不足. Empty whitelist = scan-only.
         from plugins.mhxy_mobile.custom import bag_cleaner as bc
         context.register_recognition("needs_bag_clean", bc.needs_bag_clean)
+        context.register_recognition("clean_pass_ready", bc.clean_pass_ready)
         context.register_action("run_bag_clean_pass", bc.run_bag_clean_pass)
 
     # --- Shimen Handlers ---

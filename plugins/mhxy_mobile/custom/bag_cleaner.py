@@ -22,8 +22,10 @@ this module is safety-first by construction:
   dialog mentioning 仙玉 or 离开游戏 aborts the confirm outright.
 * **Session cap**: max_items_per_session (default 10) bounds the pass so a
   runaway OCR match cannot empty the bag.
-* **No blind coordinates**: every click lands on an OCR-verified text; a
-  missing 背包 button or 出售 button is skipped with a warning.
+* **No blind coordinates**: every item/sell/confirm click lands on an
+  OCR-verified text. Only the bag-button open may fall back to the
+  configured coordinates.json entry (a framework-trusted constant), since
+  the bag button is an icon without a text label.
 """
 
 from __future__ import annotations
@@ -37,6 +39,7 @@ from loguru import logger
 
 from scheduler.dag import NodeAction, NodeRecognition, PipelineContext
 from plugins.mhxy_mobile.custom import daily_handlers as _dh
+from plugins.mhxy_mobile.custom.handlers import _get_coord_center
 
 WHITELIST_PATH = Path(__file__).resolve().parent / "data" / "bag_clean_whitelist.json"
 
@@ -47,12 +50,88 @@ NEVER_TOUCH_KWS = ("藏宝图", "宝图", "仙玉", "元宝", "金刚石", "装�
 BAG_CHROME_KWS = (
     "背包", "包裹", "关闭", "整理", "出售", "丢弃", "使用", "确定", "取消",
     "金币", "银币", "银两", "铜币", "体力", "活力", "更多", "全部", "锁", "页",
+    "物品", "任务", "配方", "仓库", "外观", "衣橱", "好友", "帮派", "门派",
+    "人物评分", "获得", "评分", "灵韵", "背包已满",
 )
+
+# Chat/system lines occlude the open bag panel; item names never carry these.
+BAG_CHAT_MARKERS = ("【", "】", "[", "]")
+
+
+def _is_item_name(text: str) -> bool:
+    t = text.strip()
+    if not t:
+        return False
+    if any(kw in t for kw in BAG_CHROME_KWS):
+        return False
+    if any(m in t for m in BAG_CHAT_MARKERS):
+        return False
+    # chat/system lines start with a channel label
+    if t.startswith(("世界", "系统", "队伍", "帮派", "门派", "当前", "喇叭")):
+        return False
+    # pure numbers/currency are not items
+    if all(c.isdigit() or c in ",，.。+|丨" for c in t):
+        return False
+    return True
 
 # The main-UI bag button label.
 BAG_BUTTON_KWS = ("背包", "包裹")
 
 DEFAULT_MAX_ITEMS = 10
+
+
+class _GridItem:
+    """An OCR hit remapped from the upscaled bag-grid crop back to baseline
+    coordinates; only .text/.center matter to _find/_center."""
+
+    def __init__(self, text: str, center: tuple, confidence: float = 0.95):
+        self.text = text
+        self.center = center
+        self.confidence = confidence
+        self.bbox = (int(center[0]) - 20, int(center[1]) - 10, 40, 20)
+
+
+def _get_coord_center_roi(ctx: PipelineContext) -> tuple:
+    """The bag-scan ROI from coordinates.json (baotu.bag_roi), 1280x720 baseline."""
+    coords = ctx.variables.get("coordinates", {})
+    box = coords.get("baotu", {}).get("bag_roi", [760, 180, 470, 470])
+    return (float(box[0]), float(box[1]), float(box[2]), float(box[3]))
+
+
+def _scan_bag_grid(ctx: PipelineContext) -> List[Any]:
+    """OCR the bag grid: crop the configured bag_roi, upscale 2x so the small
+    item-name font resolves, and map OCR boxes back to baseline coordinates so
+    clicks land on the real items. Falls back to the full frame when the crop
+    yields nothing, then to the test seam (_bag_clean_ocr_queue)."""
+    if ctx.device is not None and hasattr(ctx.device, "screencap"):
+        try:
+            raw = ctx.device.screencap()
+            if raw:
+                import cv2
+                import numpy as np
+                frame = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR)
+                if frame is not None:
+                    ctx.variables["_last_frame"] = frame
+                    rx, ry, rw, rh = _get_coord_center_roi(ctx)
+                    fh, fw = frame.shape[:2]
+                    crop = frame[max(0, int(ry)):min(fh, int(ry + rh)), max(0, int(rx)):min(fw, int(rx + rw))]
+                    if crop.size:
+                        big = cv2.resize(crop, (crop.shape[1] * 2, crop.shape[0] * 2), interpolation=cv2.INTER_CUBIC)
+                        found = _dh._ocr_items(big)
+                        items = [
+                            _GridItem(it.text, (rx + it.center[0] / 2.0, ry + it.center[1] / 2.0), it.confidence)
+                            for it in found
+                        ]
+                        if any(_is_item_name(getattr(it, "text", "")) for it in items):
+                            return items
+        except Exception as exc:
+            logger.warning(f"[bag_clean] 背包网格取帧失败：{exc}")
+    # Test seam / full-frame fallback: the crop missed the grid (panel layout
+    # differs) — a whole-frame scan at least logs the visible names.
+    queue = ctx.variables.get("_bag_clean_ocr_queue")
+    if queue:
+        return queue.pop(0)
+    return _scan_live(ctx)
 
 
 def _load_whitelist() -> dict:
@@ -67,11 +146,12 @@ def _load_whitelist() -> dict:
         return {}
 
 
-def _scan_live(ctx: PipelineContext) -> List[Any]:
-    """One live OCR of the current screen. Test seam: a device that cannot
-    screencap serves _bag_clean_ocr_queue (a list of item lists, popped per
-    call) so each scan in the pass can be scripted; the injected cache
-    _last_frame_items is the final fallback."""
+def _scan_live(ctx: PipelineContext, roi: tuple = None) -> List[Any]:
+    """One live OCR of the current screen, optionally cropped to a 1280x720
+    baseline ROI (the device's screencap is already resized to that baseline).
+    Test seam: a device that cannot screencap serves _bag_clean_ocr_queue (a
+    list of item lists, popped per call) so each scan in the pass can be
+    scripted; the injected cache _last_frame_items is the final fallback."""
     items: List[Any] = []
     fresh = False
     if ctx.device is not None and hasattr(ctx.device, "screencap"):
@@ -84,7 +164,13 @@ def _scan_live(ctx: PipelineContext) -> List[Any]:
                 if frame is not None:
                     fresh = True
                     ctx.variables["_last_frame"] = frame
-                    items = _dh._ocr_items(frame)
+                    if roi is not None:
+                        rx, ry, rw, rh = roi
+                        fh, fw = frame.shape[:2]
+                        crop = frame[max(0, int(ry)):min(fh, int(ry + rh)), max(0, int(rx)):min(fw, int(rx + rw))]
+                        items = _dh._ocr_items(crop) if crop.size else []
+                    else:
+                        items = _dh._ocr_items(frame)
         except Exception as exc:
             logger.warning(f"[bag_clean] 实机取帧失败：{exc}")
     if not fresh:
@@ -97,9 +183,15 @@ def _scan_live(ctx: PipelineContext) -> List[Any]:
 
 
 def needs_bag_clean(ctx: PipelineContext, frame: Any, rec: NodeRecognition = None) -> bool:
-    """Recognition for the standalone pipeline and the daily-DAG branch: the
-    game latched 背包空间不足 and this session has not attempted a cleanup."""
+    """Recognition for the daily-DAG branch: the game latched 背包空间不足 and
+    this session has not attempted a cleanup."""
     return bool(ctx.variables.get("shop_blocked_bag_full")) and not ctx.variables.get("bag_clean_attempted")
+
+
+def clean_pass_ready(ctx: PipelineContext, frame: Any, rec: NodeRecognition = None) -> bool:
+    """Recognition for the standalone pipeline entry: run exactly one pass —
+    False once it has completed, so the node does not loop to timeout."""
+    return not ctx.variables.get("bag_clean_attempted")
 
 
 def run_bag_clean_pass(ctx: PipelineContext, act: NodeAction = None) -> None:
@@ -110,23 +202,29 @@ def run_bag_clean_pass(ctx: PipelineContext, act: NodeAction = None) -> None:
         logger.info("[bag_clean] 战斗中无法打开背包 — 本次跳过，稍后重试")
         return
 
-    # 1. Find and click the bag button (OCR-verified only).
+    # 1. Find and click the bag button. OCR first; the main-UI bag button is an
+    # icon without a text label (live 2026-10-03: no 背包 text anywhere on the
+    # world screen), so the configured coordinates.json entry is the fallback —
+    # the same trust every other fixed button in the framework gets. The
+    # coordinate space is the 1280x720 OCR baseline; device.click scales it.
     screen = _scan_live(ctx)
     bag_btn = _dh._find(screen, lambda it: any(kw in it.text for kw in BAG_BUTTON_KWS))
-    if bag_btn is None:
-        logger.warning("[bag_clean] 未找到背包按钮 — 本次跳过清理（不盲点坐标）")
-        v["bag_clean_attempted"] = True
-        return
-    bx, by = _dh._center(bag_btn)
-    logger.info(f"[bag_clean] Opening bag at ({bx:.0f}, {by:.0f})")
+    if bag_btn is not None:
+        bx, by = _dh._center(bag_btn)
+        logger.info(f"[bag_clean] Opening bag via OCR label at ({bx:.0f}, {by:.0f})")
+    else:
+        coords = ctx.variables.get("coordinates", {})
+        bx, by = _get_coord_center(coords, "common", "btn_bag", (1180, 640, 45, 45))
+        logger.info(f"[bag_clean] Opening bag via configured btn_bag at ({bx:.0f}, {by:.0f})")
     _dh._click(ctx, bx, by)
     time.sleep(1.5)
 
-    # 2. Scan the bag grid and log what is in it.
-    bag_items = _scan_live(ctx)
+    # 2. Scan the bag grid (upscaled crop for the small item-name font, with a
+    # whole-frame fallback) and log what is in it.
+    bag_items = _scan_bag_grid(ctx)
     item_names = [
         it.text for it in bag_items
-        if getattr(it, "text", "").strip() and not any(kw in it.text for kw in BAG_CHROME_KWS)
+        if _is_item_name(getattr(it, "text", ""))
     ]
     logger.info(f"[bag_clean] 背包扫描：{len(item_names)} 个物品名：{item_names}")
 
