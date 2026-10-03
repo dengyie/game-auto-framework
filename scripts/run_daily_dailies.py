@@ -285,6 +285,7 @@ def main(max_ticks: int = 30, serial: str = "127.0.0.1:55556", queue: list | Non
                     f"mijing_quota_exhausted={ctx.variables.get('mijing_quota_exhausted', False)}, "
                     f"mijing_blocked={ctx.variables.get('mijing_blocked', False)}, "
                     f"promo_blocked={ctx.variables.get('promo_block_latch', False)}, "
+                    f"xianyu_blocked={ctx.variables.get('xianyu_block_latch', False)}, "
                     f"status={status.name}"
                 )
         except Exception:

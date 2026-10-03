@@ -46,6 +46,8 @@ TOPBAR_ACTIVITY = (353, 64)
 PANEL_CLOSE = (1142, 48)
 # promo BACK burst budget (8) + suspend grace before the run is declared blocked
 PROMO_BLOCK_STREAK = 20
+# 仙玉 cost dialog with no parseable safe button: BACK burst budget before latching
+XIANYU_BACK_STREAK = 5
 ESCORT_JOIN = (669, 377)           # 运镖 row 参加 (unscrolled panel, row 3 left)
 # 日常活动 tab, list scrolled to the very top (live 2026-09-26 & 2026-09-28):
 # row 1: 秘境降妖 (669, 148), 师门任务 (1077, 148)
@@ -877,6 +879,14 @@ def classify_screen(ctx: PipelineContext, frame: Any, rec: NodeRecognition = Non
         ctx.variables.pop("quiz_refusal_streak", None)
     if not v["popup_open"] and "promo_back_streak" in ctx.variables:
         ctx.variables.pop("promo_back_streak", None)
+    # 仙玉-dialog BACK burst: clear both the burst counter and the latch once the
+    # dialog is gone, so a later one starts fresh and a resolved block is forgotten.
+    if not v["xianyu_cost_popup"]:
+        if "xianyu_back_streak" in ctx.variables:
+            ctx.variables.pop("xianyu_back_streak", None)
+        if ctx.variables.get("xianyu_block_latch"):
+            ctx.variables.pop("xianyu_block_latch", None)
+            logger.warning("[classify] xianyu_block_latch cleared — 仙玉 dialog gone")
     # promo_block_latch means "currently stuck behind a promo that ignores BACK";
     # it clears with the promo itself so a later legitimate completion is not
     # masked, while a promo persisting to the end keeps the Summary honest.
@@ -2240,15 +2250,41 @@ def dismiss_popups(ctx: PipelineContext, act: NodeAction) -> None:
     # Safety second: a dialog offering to spend 仙玉 (秘境 death revive / continue) must
     # NEVER be confirmed. Take the safe exit (取消/离开/...) and block further 秘境 dispatch.
     if any("仙玉" in getattr(it, "text", "") for it in items):
+        texts_now = [getattr(it, "text", "") for it in items]
+        # Only the 秘境 death-revive / continue prompt (复活/继续挑战) blocks 秘境 for the
+        # rest of the day. A shop purchase-confirm that merely SHOWS 仙玉 as the currency
+        # is not that prompt — latching mijing_blocked on it wrongly skipped tonight's
+        # 秘境 (live 2026-10-04: buying a 藏宝图 raised a 仙玉-labelled confirm).
+        if any(any(kw in t for kw in ("复活", "继续挑战", "原地复活")) for t in texts_now):
+            ctx.variables["mijing_blocked"] = True
         safe = _find(items, lambda it: it.text.replace(" ", "") in ("取消", "离开", "退出", "放弃", "关闭", "暂不"))
         if safe is not None:
             x, y = _center(safe)
             logger.warning(f"[dismiss_popups] 仙玉 cost dialog detected; safe-exit via [{safe.text}] at ({x:.0f}, {y:.0f}) — NOT confirming")
             _click(ctx, x, y)
+            ctx.variables.pop("xianyu_back_streak", None)
         else:
-            logger.warning("[dismiss_popups] 仙玉 cost dialog detected; no safe button parsed, clicking panel close")
-            _click(ctx, *PANEL_CLOSE)
-        ctx.variables["mijing_blocked"] = True
+            # No parseable safe button. NEVER blind-click a fixed point: on a centered
+            # modal it is a no-op that repeats on the exact same pixel every tick until
+            # the same-coordinate watchdog kills the run (live 2026-10-04 tick 135-155:
+            # PANEL_CLOSE (1142,48) clicked 11x on a purchase-confirm, TIMEOUT exit 1).
+            # A single BACK closes most such modals; key presses never trip the click
+            # watchdog, and the next tick's quit-game guard cancels any confirm BACK
+            # raises. Bound the burst so an unclosable dialog latches (honest blocked
+            # run) instead of spinning to ticks-exhausted as a false success.
+            streak = int(ctx.variables.get("xianyu_back_streak", 0)) + 1
+            ctx.variables["xianyu_back_streak"] = streak
+            if streak > XIANYU_BACK_STREAK:
+                ctx.variables["xianyu_block_latch"] = True
+                logger.error(
+                    f"[dismiss_popups] 仙玉 dialog survived {streak} BACK presses — latching "
+                    f"xianyu_block_latch; the run cannot progress past it and must not report success"
+                )
+            elif ctx.device is not None and hasattr(ctx.device, "press_key"):
+                logger.warning(f"[dismiss_popups] 仙玉 cost dialog detected; no safe button parsed, pressing BACK (attempt {streak}/{XIANYU_BACK_STREAK})")
+                ctx.device.press_key(4)
+            else:
+                logger.warning("[dismiss_popups] 仙玉 cost dialog; no safe button and no device press_key — waiting")
         time.sleep(1.5)
         return
 

@@ -578,6 +578,54 @@ def test_xianyu_dialog_never_confirmed_and_blocks_mijing():
     assert v.get("mijing_blocked") is True
 
 
+def test_xianyu_shop_confirm_no_safe_button_presses_back_not_panel_close():
+    """回归 2026-10-04：买藏宝图后弹出的「仙玉」确认框没解析出安全按钮。
+    旧代码回退盲点 PANEL_CLOSE (1142,48)——在居中弹窗上是死点，每 tick 重复同一
+    坐标，11 次后被同坐标 watchdog 判 TIMEOUT(exit 1)。必须改用 BACK（按键不进
+    点击 watchdog），且在未确认消费前绝不点确定。"""
+    device = DummyDevice()
+    ctx = PipelineContext(device=device)
+    ctx.variables["_last_frame_items"] = [
+        DummyOCRItem("购买确认", (640.0, 300.0)),
+        DummyOCRItem("花费 200 仙玉", (640.0, 340.0)),
+        DummyOCRItem("确定", (747.0, 440.0)),
+    ]
+    dismiss_popups(ctx, NodeAction(type="custom", custom_func="dismiss_popups"))
+    assert (747.0, 440.0) not in device.clicks, "仙玉 确认 must never be clicked"
+    assert device.keys == [4], "must press BACK, never blind-click PANEL_CLOSE"
+    assert (float(PANEL_CLOSE[0]), float(PANEL_CLOSE[1])) not in device.clicks
+    # A shop purchase-confirm is NOT the 秘境 death-revive prompt — must not skip 秘境.
+    assert ctx.variables.get("mijing_blocked") is not True
+
+
+def test_xianyu_back_burst_latches_instead_of_spinning_to_timeout():
+    """无安全按钮的仙玉弹窗连按 BACK 超过预算必须 latch 成失败，而不是耗尽 tick 假成功。"""
+    device = DummyDevice()
+    ctx = PipelineContext(device=device)
+    ctx.variables["_last_frame_items"] = [
+        DummyOCRItem("花费 200 仙玉", (640.0, 340.0)),
+        DummyOCRItem("确定", (747.0, 440.0)),
+    ]
+    for _ in range(6):
+        dismiss_popups(ctx, NodeAction(type="custom", custom_func="dismiss_popups"))
+    assert ctx.variables.get("xianyu_block_latch") is True
+    assert ctx.variables.get("xianyu_back_streak", 0) > 5
+
+
+def test_xianyu_revive_prompt_still_blocks_mijing():
+    """真正的秘境复活弹窗（含复活/继续挑战）仍必须阻断秘境派发。"""
+    device = DummyDevice()
+    ctx = PipelineContext(device=device)
+    ctx.variables["_last_frame_items"] = [
+        DummyOCRItem("复活并继续挑战", (640.0, 300.0)),
+        DummyOCRItem("花费20仙玉", (640.0, 340.0)),
+        DummyOCRItem("取消", (520.0, 420.0)),
+    ]
+    dismiss_popups(ctx, NodeAction(type="custom", custom_func="dismiss_popups"))
+    assert (520.0, 420.0) in device.clicks
+    assert ctx.variables.get("mijing_blocked") is True
+
+
 def test_terminal_force_complete_warns_mijing_not_full():
     """终局兜底强制收尾时，必须如实告警秘境未打满（5/10）与活跃度缺口，不得静默。"""
     device = DummyDevice()
