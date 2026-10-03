@@ -2081,3 +2081,54 @@ def test_bag_full_gate_skips_shimen_but_allows_baotu_dig():
     dh.handle_activity_panel(ctx, NodeAction(type="custom", custom_func="handle_activity_panel"))
     assert "师门任务" not in ctx.variables["completed_tasks"], "gated task must not be marked complete"
     assert ctx.variables.get("daily_rows_aligned") is True, "宝图 must stay dispatchable so the dig flow runs"
+
+
+def test_shimen_board_reward_dialog_uses_item_button():
+    """回归 2026-10-03：心魔宝珠奖励弹窗里「自动完成任务」文字触发 shimen_board_open
+    误判，但板上没有 继续任务/去完成 按钮，盲点 fallback (629,442) 落在描述文字上
+    连点 20 次直到 stall watchdog 杀掉整跑。必须先消费弹窗自身的 使用 按钮。"""
+    device = DummyDevice()
+    ctx = PipelineContext(device=device)
+    ctx.variables["current_task_name"] = "师门任务"
+    ctx.variables["_last_frame_items"] = [
+        DummyOCRItem("心魔宝珠", (620.0, 186.0)),
+        DummyOCRItem("类型：奖励", (620.0, 214.0)),
+        DummyOCRItem("X", (1159.0, 395.0)),
+        DummyOCRItem("门派亲密度", (1032.0, 479.0)),
+        DummyOCRItem("确定", (640.0, 556.0)),
+        DummyOCRItem("自动完成任务", (899.0, 548.0)),
+        DummyOCRItem("使用", (1094.0, 577.0)),
+    ]
+    click_shimen_board(ctx, NodeAction(type="custom", custom_func="click_shimen_board"))
+    assert device.clicks == [(1094.0, 577.0)], "must click the dialog's 使用 button, not the blind fallback"
+
+
+def test_shimen_board_reward_dialog_confirm_after_use():
+    """使用 之后的 确定 确认步骤（弹窗只剩 确定按钮时）也要能点击，
+    且绝不能碰退出游戏/仙玉弹窗的按钮。"""
+    device = DummyDevice()
+    ctx = PipelineContext(device=device)
+    ctx.variables["current_task_name"] = "师门任务"
+    ctx.variables["_last_frame_items"] = [
+        DummyOCRItem("心魔宝珠", (620.0, 186.0)),
+        DummyOCRItem("获得了大量经验", (620.0, 300.0)),
+        DummyOCRItem("确定", (640.0, 556.0)),
+        DummyOCRItem("自动完成任务", (899.0, 548.0)),
+    ]
+    click_shimen_board(ctx, NodeAction(type="custom", custom_func="click_shimen_board"))
+    assert device.clicks == [(640.0, 556.0)], "must click the reward dialog's 确定"
+
+
+def test_shimen_board_never_clicks_quit_or_xianyu_confirm():
+    """退出游戏/仙玉消费弹窗的 确定/使用 永远不能碰——守卫必须先于按钮匹配。"""
+    device = DummyDevice()
+    ctx = PipelineContext(device=device)
+    ctx.variables["current_task_name"] = "师门任务"
+    # 仙玉弹窗：含仙玉字样，确定按钮在中下区域 — 必须走盲点 fallback 而非点确定
+    ctx.variables["_last_frame_items"] = [
+        DummyOCRItem("是否花费 20 仙玉", (620.0, 300.0)),
+        DummyOCRItem("确定", (640.0, 556.0)),
+        DummyOCRItem("自动完成任务", (899.0, 548.0)),
+    ]
+    click_shimen_board(ctx, NodeAction(type="custom", custom_func="click_shimen_board"))
+    assert (640.0, 556.0) not in device.clicks, "仙玉 spend dialog's 确定 must never be clicked"

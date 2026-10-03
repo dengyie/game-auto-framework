@@ -1450,6 +1450,29 @@ def click_shimen_board(ctx: PipelineContext, act: NodeAction) -> None:
         time.sleep(1.5)
         return
 
+    # Reward/item dialog overlaying the board (live 2026-10-03: 心魔宝珠 详情 with
+    # 自动完成任务/确定/使用): its own buttons are the actionable targets. The blind
+    # (629, 442) fallback below lands on the item description text and loops until
+    # the stall watchdog kills the whole run, so try the dialog's buttons first —
+    # but never on a quit-game or 仙玉-spend dialog (their buttons must never be
+    # clicked; classify routes those to their own guarded nodes).
+    texts = [it.text for it in items]
+    if not any(("离开游戏" in t) or ("仙玉" in t) for t in texts):
+        use_btn = _find(items, lambda it: it.text == "使用" and 500 < it.center[0] < 1250 and 380 < it.center[1] < 650)
+        if use_btn is not None:
+            ux, uy = _center(use_btn)
+            logger.info(f"[shimen_board] Reward dialog overlay: clicking [使用] at ({ux:.0f}, {uy:.0f})")
+            _click(ctx, ux, uy)
+            time.sleep(2.0)
+            return
+        ok_btn = _find(items, lambda it: it.text in ("确定", "确认") and 500 < it.center[0] < 800 and 450 < it.center[1] < 650)
+        if ok_btn is not None:
+            ox, oy = _center(ok_btn)
+            logger.info(f"[shimen_board] Reward dialog confirm: clicking [{ok_btn.text}] at ({ox:.0f}, {oy:.0f})")
+            _click(ctx, ox, oy)
+            time.sleep(1.5)
+            return
+
     logger.info("[shimen_board] Fallback clicking 继续任务 at (629, 442)")
     _click(ctx, 629, 442)
     time.sleep(2.0)
