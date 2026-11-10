@@ -7,7 +7,7 @@ server:
 
 device:
   default_type: "adb"  # "adb", "virtual", "windows", "macos"
-  adb_serial: "127.0.0.1:5555"  # Remote Android emulator or Cloud Phone address
+  adb_serial: "10.144.144.51:5555"  # Remote Android emulator or Cloud Phone address
   resolution: [1280, 720]
   auto_reconnect: true
 
@@ -33,11 +33,11 @@ cluster:
   instances:
     - id: "inst_01"
       type: "adb"
-      serial: "127.0.0.1:5555"
+      serial: "10.144.144.51:5555"
       name: "Emulator_Leader"
     - id: "inst_02"
       type: "adb"
-      serial: "127.0.0.1:5556"
+      serial: "10.144.144.52:5555"
       name: "Emulator_Member_1"
   teams:
     - id: "team_01"

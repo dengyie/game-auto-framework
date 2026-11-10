@@ -686,8 +686,8 @@ def init_default_cluster(config_path: Optional[str] = None) -> None:
     accounts = ACCOUNT_MATRIX.list_accounts()
     if len(CLUSTER_POOL.get_instances()) == 0:
         real_configs = [
-            ("inst_01", "adb", "127.0.0.1:55556", "云手机 (SM-F900F)", "daily_shimen"),
-            ("inst_02", "adb", "127.0.0.1:16384", "Windows MuMu模拟器", "basic_tasks"),
+            ("inst_01", "adb", "10.144.144.51:5555", "云手机 (SM-F900F)", "daily_shimen"),
+            ("inst_02", "adb", "10.144.144.52:5555", "云手机2 (SM-F900F)", "basic_tasks"),
         ]
         for i, (inst_id, dev_type, serial, dev_name, pipe_name) in enumerate(real_configs, start=1):
             acc = accounts[i - 1] if len(accounts) >= i else None
